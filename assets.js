@@ -15,13 +15,23 @@ router.get('/', (req, res) => {
   res.json(activos);
 });
 router.post('/', (req, res) => {
-  const { codigo, nombre, categoria, marca, modelo, patente, fecha_compra, valor_compra } = req.body;
-  if (!codigo || !nombre) return res.status(400).json({ error: 'codigo y nombre requeridos' });
+  const b = req.body;
+  if (!b.codigo || !b.nombre) return res.status(400).json({ error: 'codigo y nombre requeridos' });
   try {
-    const r = db.prepare(`INSERT INTO activos (codigo,nombre,categoria,marca,modelo,patente,fecha_compra,valor_compra)
-      VALUES (?,?,?,?,?,?,?,?)`).run(codigo, nombre, categoria || null, marca || null, modelo || null, patente || null, fecha_compra || null, Number(valor_compra) || 0);
+    const r = db.prepare(`INSERT INTO activos (codigo,nombre,categoria,marca,modelo,patente,fecha_compra,valor_compra,proveedor,factura,estado)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(b.codigo, b.nombre, b.categoria || null, b.marca || null, b.modelo || null, b.patente || null, b.fecha_compra || null, Number(b.valor_compra) || 0, b.proveedor || null, b.factura || null, b.estado || 'EN_USO');
     res.json(db.prepare('SELECT * FROM activos WHERE id=?').get(r.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'codigo duplicado' }); }
+});
+router.put('/:id', (req, res) => {
+  const b = req.body; const a = db.prepare('SELECT * FROM activos WHERE id=?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'No existe' });
+  db.prepare(`UPDATE activos SET codigo=?,nombre=?,categoria=?,marca=?,modelo=?,patente=?,fecha_compra=?,valor_compra=?,proveedor=?,factura=?,estado=? WHERE id=?`)
+    .run(b.codigo != null ? b.codigo : a.codigo, b.nombre != null ? b.nombre : a.nombre, b.categoria != null ? b.categoria : a.categoria,
+      b.marca != null ? b.marca : a.marca, b.modelo != null ? b.modelo : a.modelo, b.patente != null ? b.patente : a.patente,
+      b.fecha_compra != null ? b.fecha_compra : a.fecha_compra, b.valor_compra != null ? Number(b.valor_compra) : a.valor_compra,
+      b.proveedor != null ? b.proveedor : a.proveedor, b.factura != null ? b.factura : a.factura, b.estado || a.estado, req.params.id);
+  res.json(db.prepare('SELECT * FROM activos WHERE id=?').get(req.params.id));
 });
 router.get('/:id', (req, res) => {
   const a = db.prepare('SELECT * FROM activos WHERE id=?').get(req.params.id);

@@ -96,6 +96,8 @@ try { db.exec("ALTER TABLE creditos ADD COLUMN tipo TEXT DEFAULT 'CREDITO'"); } 
 try { db.exec('ALTER TABLE creditos ADD COLUMN pie REAL DEFAULT 0'); } catch (e) {}
 try { db.exec('ALTER TABLE creditos ADD COLUMN iva_pct REAL DEFAULT 0'); } catch (e) {}
 try { db.exec('ALTER TABLE creditos ADD COLUMN glosa TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE activos ADD COLUMN proveedor TEXT'); } catch (e) {}
+try { db.exec('ALTER TABLE activos ADD COLUMN factura TEXT'); } catch (e) {}
 try { db.exec('ALTER TABLE credito_cuotas ADD COLUMN iva REAL DEFAULT 0'); } catch (e) {}
 try { db.exec('ALTER TABLE credito_cuotas ADD COLUMN cuota_neta REAL DEFAULT 0'); } catch (e) {}
 
@@ -103,17 +105,18 @@ try { db.exec('ALTER TABLE credito_cuotas ADD COLUMN cuota_neta REAL DEFAULT 0')
 (function ensureUsuariosIniciales() {
   const tmp = bcrypt.hashSync('Jmc2026.', 10);
   const users = [
-    ['R. Medina', 'rmedina@jmcingenieria.cl', 'admin'],
-    ['J. Palma', 'jpalma@jmcingenieria.cl', 'usuario'],
-    ['Administracion 1', 'administracion1@jmcingenieria.cl', 'usuario'],
-    ['G. Valles', 'gvalles@jmcingenieria.cl', 'usuario'],
-    ['Finanzas', 'finanzas@jmcingenieria.cl', 'usuario'],
-    ['Administracion 2', 'administracion2@jmcingenieria.cl', 'usuario']
+    ['R. Medina', 'rmedina@jmcingenieria.cl', 'admin', 'jmc'],
+    ['J. Palma', 'jpalma@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['Administracion 1', 'administracion1@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['G. Valles', 'gvalles@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['Finanzas', 'finanzas@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['Administracion 2', 'administracion2@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['Adrian', 'adrian@jmcingenieria.cl', 'usuario', null]
   ];
   const existe = db.prepare('SELECT 1 FROM usuarios WHERE email=?');
   const ins = db.prepare('INSERT INTO usuarios (nombre,email,password_hash,rol,empresa) VALUES (?,?,?,?,?)');
-  for (const [nombre, email, rol] of users) {
-    if (!existe.get(email)) ins.run(nombre, email, tmp, rol, 'jmc');
+  for (const [nombre, email, rol, empresa] of users) {
+    if (!existe.get(email)) ins.run(nombre, email, tmp, rol, empresa);
   }
 })();
 

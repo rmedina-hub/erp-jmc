@@ -429,29 +429,66 @@ function renderActTabs() {
   C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === actTab));
   (actTab === 'activos' ? actLista : actAlertas)();
 }
-async function actLista() {
-  const a = await api('GET', '/activos');
-  $('#actBody').innerHTML = `<div class="card"><h3>Activos fijos <button class="btn" onclick="formActivo()">+ Nuevo activo</button></h3>
-    <div class="scroll"><table><tr><th>Codigo</th><th>Nombre</th><th>Categoria</th><th>Patente</th><th class="num">Valor compra</th><th class="num">Km actual</th><th></th></tr>
-    ${a.length ? a.map(x => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.nombre)}</td><td>${esc(x.categoria||'')}</td><td>${esc(x.patente||'')}</td><td class="num">${clp(x.valor_compra)}</td><td class="num">${x.km_actual!=null?num(x.km_actual,0)+' km':'-'}</td><td><button class="btn sm ghost" onclick="verActivo(${x.id})">Ficha</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin activos</td></tr>'}</table></div></div>`;
+let actFiltroCat = '';
+function estadoPillActivo(e) {
+  const m = { EN_USO: ['ok', 'En uso'], EN_MANTENCION: ['warn', 'En mantencion'], DADO_DE_BAJA: ['no', 'Dado de baja'] }[e] || ['ok', e || 'En uso'];
+  return `<span class="pill ${m[0]}">${m[1]}</span>`;
+}
+async function actLista() { window._activos = await api('GET', '/activos'); renderActivos(); }
+function renderActivos() {
+  const all = window._activos || [];
+  const cats = [...new Set(all.map(a => a.categoria || 'Sin categoria'))].sort();
+  const list = actFiltroCat ? all.filter(a => (a.categoria || 'Sin categoria') === actFiltroCat) : all;
+  const res = {}; let total = 0;
+  all.forEach(a => { const k = a.categoria || 'Sin categoria'; res[k] = res[k] || { n: 0, v: 0 }; res[k].n++; res[k].v += a.valor_compra || 0; total += a.valor_compra || 0; });
+  const resRows = Object.keys(res).sort().map(k => `<tr><td>${esc(k)}</td><td class="num">${res[k].n}</td><td class="num">${clp(res[k].v)}</td></tr>`).join('');
+  $('#actBody').innerHTML = `
+  <div class="card"><h3>Resumen por categoria <span class="muted">Total general: ${clp(total)} &middot; ${all.length} activos</span></h3>
+    <table><tr><th>Categoria</th><th class="num">Cantidad</th><th class="num">Valor</th></tr>${resRows}<tr style="background:#dce6f2"><td><b>TOTAL</b></td><td class="num"><b>${all.length}</b></td><td class="num"><b>${clp(total)}</b></td></tr></table></div>
+  <div class="card"><h3>Activos fijos <span><select id="actCat" onchange="actFiltroCat=this.value;renderActivos()" style="width:auto;min-width:170px">${['<option value="">Todas las categorias</option>'].concat(cats.map(c => `<option value="${esc(c)}" ${c === actFiltroCat ? 'selected' : ''}>${esc(c)}</option>`)).join('')}</select> <button class="btn" onclick="formActivo()">+ Nuevo activo</button></span></h3>
+    <div class="scroll"><table><tr><th>Codigo</th><th>Nombre</th><th>Categoria</th><th>Estado</th><th>Proveedor</th><th>N&deg; factura</th><th class="num">Valor compra</th><th class="num">Km</th><th></th></tr>
+    ${list.length ? list.map(x => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.nombre)}</td><td>${esc(x.categoria||'')}</td><td>${estadoPillActivo(x.estado)}</td><td>${esc(x.proveedor||'')}</td><td>${esc(x.factura||'')}</td><td class="num">${clp(x.valor_compra)}</td><td class="num">${x.km_actual!=null?num(x.km_actual,0):'-'}</td><td><button class="btn sm ghost" onclick="verActivo(${x.id})">Ficha</button> <button class="btn sm ghost" onclick="editarActivo(${x.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin activos en esta categoria</td></tr>'}</table></div></div>`;
 }
 function formActivo() {
   modal(`<h3>Nuevo activo</h3>
     <div class="row"><div class="field"><label>Codigo</label><input id="aCod"></div><div class="field"><label>Nombre</label><input id="aNom"></div></div>
     <div class="row"><div class="field"><label>Categoria</label><select id="aCat"><option>VEHICULO</option><option>MAQUINARIA</option><option>EQUIPO</option><option>HERRAMIENTA</option><option>OTRO</option></select></div>
-      <div class="field"><label>Patente</label><input id="aPat"></div></div>
+      <div class="field"><label>Estado</label><select id="aEstado"><option value="EN_USO">En uso</option><option value="EN_MANTENCION">En mantencion</option><option value="DADO_DE_BAJA">Dado de baja</option></select></div></div>
+    <div class="row"><div class="field"><label>Proveedor</label><input id="aProv"></div><div class="field"><label>N&deg; factura</label><input id="aFact"></div></div>
+    <div class="row"><div class="field"><label>Patente</label><input id="aPat"></div><div class="field"><label>Valor compra</label><input id="aValor" type="number"></div></div>
     <div class="row"><div class="field"><label>Marca</label><input id="aMarca"></div><div class="field"><label>Modelo</label><input id="aMod"></div></div>
-    <div class="row"><div class="field"><label>Fecha compra</label><input id="aFecha" type="date"></div><div class="field"><label>Valor compra</label><input id="aValor" type="number"></div></div>
+    <div class="row"><div class="field"><label>Fecha compra</label><input id="aFecha" type="date"></div></div>
     <div class="err" id="aErr"></div>
     <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarActivo()">Guardar</button></div>`);
 }
 async function guardarActivo() {
-  try { await api('POST', '/activos', { codigo: val('aCod'), nombre: val('aNom'), categoria: val('aCat'), patente: val('aPat'), marca: val('aMarca'), modelo: val('aMod'), fecha_compra: val('aFecha'), valor_compra: val('aValor') }); closeModal(); actLista(); }
+  try { await api('POST', '/activos', { codigo: val('aCod'), nombre: val('aNom'), categoria: val('aCat'), estado: val('aEstado'), proveedor: val('aProv'), factura: val('aFact'), patente: val('aPat'), marca: val('aMarca'), modelo: val('aMod'), fecha_compra: val('aFecha'), valor_compra: val('aValor') }); closeModal(); actLista(); }
   catch (e) { $('#aErr').textContent = e.message; }
+}
+async function editarActivo(id) {
+  const a = (window._activos || []).find(x => x.id === id) || await api('GET', '/activos/' + id);
+  const cats = ['VEHICULO','MAQUINARIA','EQUIPO','HERRAMIENTA','OTRO'];
+  const catOpts = cats.map(c => `<option ${a.categoria===c?'selected':''}>${c}</option>`).join('') + (cats.includes(a.categoria)||!a.categoria ? '' : `<option selected>${esc(a.categoria)}</option>`);
+  const eo = (v, t) => `<option value="${v}" ${a.estado===v?'selected':''}>${t}</option>`;
+  modal(`<h3>Editar activo</h3>
+    <div class="row"><div class="field"><label>Codigo</label><input id="eaCod" value="${esc(a.codigo||'')}"></div><div class="field"><label>Nombre</label><input id="eaNom" value="${esc(a.nombre||'')}"></div></div>
+    <div class="row"><div class="field"><label>Categoria</label><select id="eaCat">${catOpts}</select></div>
+      <div class="field"><label>Estado</label><select id="eaEstado">${eo('EN_USO','En uso')}${eo('EN_MANTENCION','En mantencion')}${eo('DADO_DE_BAJA','Dado de baja')}</select></div></div>
+    <div class="row"><div class="field"><label>Proveedor</label><input id="eaProv" value="${esc(a.proveedor||'')}"></div><div class="field"><label>N&deg; factura</label><input id="eaFact" value="${esc(a.factura||'')}"></div></div>
+    <div class="row"><div class="field"><label>Patente</label><input id="eaPat" value="${esc(a.patente||'')}"></div><div class="field"><label>Valor compra</label><input id="eaValor" type="number" value="${a.valor_compra||0}"></div></div>
+    <div class="row"><div class="field"><label>Marca</label><input id="eaMarca" value="${esc(a.marca||'')}"></div><div class="field"><label>Modelo</label><input id="eaMod" value="${esc(a.modelo||'')}"></div></div>
+    <div class="row"><div class="field"><label>Fecha compra</label><input id="eaFecha" type="date" value="${a.fecha_compra||''}"></div></div>
+    <div class="err" id="eaErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarEdicionActivo(${id})">Guardar</button></div>`);
+}
+async function guardarEdicionActivo(id) {
+  try { await api('PUT', '/activos/' + id, { codigo: val('eaCod'), nombre: val('eaNom'), categoria: val('eaCat'), estado: val('eaEstado'), proveedor: val('eaProv'), factura: val('eaFact'), patente: val('eaPat'), valor_compra: val('eaValor'), marca: val('eaMarca'), modelo: val('eaMod'), fecha_compra: val('eaFecha') }); closeModal(); actLista(); }
+  catch (e) { $('#eaErr').textContent = e.message; }
 }
 async function verActivo(id) {
   const a = await api('GET', '/activos/' + id);
   modal(`<h3>${esc(a.nombre)} <span class="muted">${esc(a.codigo)} · ${esc(a.patente||'')}</span></h3>
+    <p class="muted" style="margin-top:-6px">${estadoPillActivo(a.estado)} · ${esc(a.categoria||'')} · Valor ${clp(a.valor_compra)}${a.proveedor?' · Prov: '+esc(a.proveedor):''}${a.factura?' · Factura '+esc(a.factura):''}</p>
     <div class="tabs"><button class="active" onclick="actSub(event,'km',${id})">Kilometrajes</button><button onclick="actSub(event,'seg',${id})">Seguros</button><button onclick="actSub(event,'doc',${id})">Documentos</button></div>
     <div id="aSub"></div>
     <div class="right" style="margin-top:14px"><button class="btn red" onclick="delActivo(${id})">Eliminar</button> <button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
