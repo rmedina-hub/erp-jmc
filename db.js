@@ -95,6 +95,7 @@ try { db.exec('ALTER TABLE usuarios ADD COLUMN empresa TEXT'); } catch (e) {}
 try { db.exec("ALTER TABLE creditos ADD COLUMN tipo TEXT DEFAULT 'CREDITO'"); } catch (e) {}
 try { db.exec('ALTER TABLE creditos ADD COLUMN pie REAL DEFAULT 0'); } catch (e) {}
 try { db.exec('ALTER TABLE creditos ADD COLUMN iva_pct REAL DEFAULT 0'); } catch (e) {}
+try { db.exec('ALTER TABLE creditos ADD COLUMN glosa TEXT'); } catch (e) {}
 try { db.exec('ALTER TABLE credito_cuotas ADD COLUMN iva REAL DEFAULT 0'); } catch (e) {}
 try { db.exec('ALTER TABLE credito_cuotas ADD COLUMN cuota_neta REAL DEFAULT 0'); } catch (e) {}
 

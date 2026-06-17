@@ -315,12 +315,13 @@ async function vCreditos() {
   const creds = await api('GET', '/creditos');
   C().innerHTML = `<div class="card"><h3>Creditos bancarios <button class="btn" onclick="formCredito()">+ Nuevo credito</button></h3>
     <div class="scroll"><table><tr><th>Banco</th><th>Nombre</th><th>Tipo</th><th>Sistema</th><th class="num">Monto</th><th class="num">Tasa mens.</th><th>Cuotas</th><th class="num">Saldo pend.</th><th>Estado</th><th></th></tr>
-    ${creds.length ? creds.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}</td><td>${c.tipo||'CREDITO'}</td><td>${c.sistema}</td><td class="num">${clp(c.monto)}</td><td class="num">${num(c.tasa_mensual,2)}%</td><td>${c.cuotas_pagadas}/${c.cuotas_total}</td><td class="num">${clp(c.saldo_pendiente)}</td><td><span class="pill ${c.estado==='PAGADO'?'ok':'warn'}">${c.estado}</span></td><td><button class="btn sm ghost" onclick="verCredito(${c.id})">Tabla</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Sin creditos registrados</td></tr>'}</table></div></div>`;
+    ${creds.length ? creds.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}${c.glosa?`<br><span class="muted" style="font-size:11px">${esc(c.glosa)}</span>`:''}</td><td>${c.tipo||'CREDITO'}</td><td>${c.sistema}</td><td class="num">${clp(c.monto)}</td><td class="num">${num(c.tasa_mensual,2)}%</td><td>${c.cuotas_pagadas}/${c.cuotas_total}</td><td class="num">${clp(c.saldo_pendiente)}</td><td><span class="pill ${c.estado==='PAGADO'?'ok':'warn'}">${c.estado}</span></td><td><button class="btn sm ghost" onclick="verCredito(${c.id})">Tabla</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Sin creditos registrados</td></tr>'}</table></div></div>`;
 }
 async function formCredito() {
   const cu = await api('GET', '/tesoreria/cuentas');
   modal(`<h3>Nuevo credito / leasing</h3>
-    <div class="row"><div class="field"><label>Banco / Arrendador</label><input id="kBanco"></div><div class="field"><label>Nombre / Glosa</label><input id="kNom"></div></div>
+    <div class="row"><div class="field"><label>Banco / Arrendador</label><input id="kBanco"></div><div class="field"><label>Nombre / N&deg; operacion</label><input id="kNom"></div></div>
+    <div class="row"><div class="field"><label>Glosa / destino (&iquest;para que fue?)</label><input id="kGlosa" placeholder="Ej: Fogape, compra camion, maquinaria"></div></div>
     <div class="row"><div class="field"><label>Tipo</label><select id="kTipo" onchange="document.getElementById('kIva').value=this.value==='LEASING'?19:0">
         <option value="CREDITO">Credito</option><option value="LEASING">Leasing</option></select></div>
       <div class="field"><label>Sistema</label><select id="kSis"><option value="FRANCES">Frances (cuota fija)</option><option value="ALEMAN">Aleman (amort. fija)</option></select></div></div>
@@ -340,7 +341,7 @@ async function formCredito() {
     <div id="kSim"></div>`);
 }
 function credBody() {
-  return { tipo: val('kTipo'), monto: val('kMonto'), pie: val('kPie'), tasa_mensual: val('kTasa'), n_cuotas: val('kCuotas'), sistema: val('kSis'), fecha_inicio: val('kFecha'), iva_pct: val('kIva') };
+  return { tipo: val('kTipo'), glosa: val('kGlosa'), monto: val('kMonto'), pie: val('kPie'), tasa_mensual: val('kTasa'), n_cuotas: val('kCuotas'), sistema: val('kSis'), fecha_inicio: val('kFecha'), iva_pct: val('kIva') };
 }
 async function calcularTasaCredito() {
   const c = prompt('Valor de la cuota NETA (sin IVA):'); if (!c) return;
@@ -391,7 +392,7 @@ async function verCredito(id) {
   const c = await api('GET', '/creditos/' + id);
   c.cuotas.forEach(q => q._cid = id);
   modal(`<h3>${esc(c.banco)} - ${esc(c.nombre)} <span class="muted">(${c.tipo||'CREDITO'} / ${c.sistema})</span></h3>
-    <p class="muted">${c.tipo || 'CREDITO'} · Monto ${clp(c.monto)}${c.pie ? ' · Pie ' + clp(c.pie) : ''} · ${num(c.tasa_mensual,2)}% mensual · ${c.n_cuotas} cuotas${c.iva_pct ? ' · IVA ' + c.iva_pct + '%' : ''}</p>
+    <p class="muted">${c.tipo || 'CREDITO'} · Monto ${clp(c.monto)}${c.pie ? ' · Pie ' + clp(c.pie) : ''} · ${num(c.tasa_mensual,2)}% mensual · ${c.n_cuotas} cuotas${c.iva_pct ? ' · IVA ' + c.iva_pct + '%' : ''}</p>${c.glosa ? `<p style="margin-top:-6px"><b>Destino:</b> ${esc(c.glosa)}</p>` : ''}
     ${tablaAmort(c.cuotas, true)}
     <div class="right" style="margin-top:14px"><button class="btn red" onclick="delCredito(${id})">Eliminar credito</button> <button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
 }

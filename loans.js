@@ -105,9 +105,9 @@ router.post('/', (req, res) => {
     } else {
       filas = generarTabla({ monto, pie, tasa_mensual: tasa, n_cuotas: nCuotas, sistema: sis, fecha_inicio: b.fecha_inicio, iva_pct: ivaPct });
     }
-    const r = db.prepare(`INSERT INTO creditos (banco,nombre,monto,tasa_mensual,n_cuotas,sistema,fecha_inicio,cuenta_id,tipo,pie,iva_pct)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(b.banco, b.nombre || b.banco, monto, tasa, nCuotas, sis, b.fecha_inicio,
-      b.cuenta_id || null, tipo, pie, ivaPct);
+    const r = db.prepare(`INSERT INTO creditos (banco,nombre,monto,tasa_mensual,n_cuotas,sistema,fecha_inicio,cuenta_id,tipo,pie,iva_pct,glosa)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(b.banco, b.nombre || b.banco, monto, tasa, nCuotas, sis, b.fecha_inicio,
+      b.cuenta_id || null, tipo, pie, ivaPct, b.glosa || null);
     const cid = r.lastInsertRowid;
     const ins = db.prepare(`INSERT INTO credito_cuotas (credito_id,numero,fecha_venc,cuota,interes,amortizacion,saldo,iva,cuota_neta,pagado,fecha_pago)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
