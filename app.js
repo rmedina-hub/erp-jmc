@@ -314,23 +314,58 @@ async function crearDesdeCartola(id) {
 async function vCreditos() {
   const creds = await api('GET', '/creditos');
   C().innerHTML = `<div class="card"><h3>Creditos bancarios <button class="btn" onclick="formCredito()">+ Nuevo credito</button></h3>
-    <div class="scroll"><table><tr><th>Banco</th><th>Nombre</th><th>Sistema</th><th class="num">Monto</th><th class="num">Tasa mens.</th><th>Cuotas</th><th class="num">Saldo pend.</th><th>Estado</th><th></th></tr>
-    ${creds.length ? creds.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}</td><td>${c.sistema}</td><td class="num">${clp(c.monto)}</td><td class="num">${num(c.tasa_mensual,2)}%</td><td>${c.cuotas_pagadas}/${c.cuotas_total}</td><td class="num">${clp(c.saldo_pendiente)}</td><td><span class="pill ${c.estado==='PAGADO'?'ok':'warn'}">${c.estado}</span></td><td><button class="btn sm ghost" onclick="verCredito(${c.id})">Tabla</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin creditos registrados</td></tr>'}</table></div></div>`;
+    <div class="scroll"><table><tr><th>Banco</th><th>Nombre</th><th>Tipo</th><th>Sistema</th><th class="num">Monto</th><th class="num">Tasa mens.</th><th>Cuotas</th><th class="num">Saldo pend.</th><th>Estado</th><th></th></tr>
+    ${creds.length ? creds.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}</td><td>${c.tipo||'CREDITO'}</td><td>${c.sistema}</td><td class="num">${clp(c.monto)}</td><td class="num">${num(c.tasa_mensual,2)}%</td><td>${c.cuotas_pagadas}/${c.cuotas_total}</td><td class="num">${clp(c.saldo_pendiente)}</td><td><span class="pill ${c.estado==='PAGADO'?'ok':'warn'}">${c.estado}</span></td><td><button class="btn sm ghost" onclick="verCredito(${c.id})">Tabla</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Sin creditos registrados</td></tr>'}</table></div></div>`;
 }
 async function formCredito() {
   const cu = await api('GET', '/tesoreria/cuentas');
-  modal(`<h3>Nuevo credito bancario</h3>
-    <div class="row"><div class="field"><label>Banco</label><input id="kBanco"></div><div class="field"><label>Nombre/Glosa</label><input id="kNom"></div></div>
-    <div class="row"><div class="field"><label>Monto</label><input id="kMonto" type="number"></div><div class="field"><label>Tasa mensual (%)</label><input id="kTasa" type="number" step="0.01"></div></div>
-    <div class="row"><div class="field"><label>N° cuotas</label><input id="kCuotas" type="number"></div><div class="field"><label>Sistema</label><select id="kSis"><option value="FRANCES">Frances (cuota fija)</option><option value="ALEMAN">Aleman (amort. fija)</option></select></div></div>
+  modal(`<h3>Nuevo credito / leasing</h3>
+    <div class="row"><div class="field"><label>Banco / Arrendador</label><input id="kBanco"></div><div class="field"><label>Nombre / Glosa</label><input id="kNom"></div></div>
+    <div class="row"><div class="field"><label>Tipo</label><select id="kTipo" onchange="document.getElementById('kIva').value=this.value==='LEASING'?19:0">
+        <option value="CREDITO">Credito</option><option value="LEASING">Leasing</option></select></div>
+      <div class="field"><label>Sistema</label><select id="kSis"><option value="FRANCES">Frances (cuota fija)</option><option value="ALEMAN">Aleman (amort. fija)</option></select></div></div>
+    <div class="row"><div class="field"><label>Monto total</label><input id="kMonto" type="number"></div>
+      <div class="field"><label>Pie inicial / cuota inicial pagada</label><input id="kPie" type="number" value="0"></div></div>
+    <div class="row"><div class="field"><label>N&deg; cuotas</label><input id="kCuotas" type="number"></div>
+      <div class="field"><label>Tasa mensual (%)</label><input id="kTasa" type="number" step="0.0001"></div>
+      <div class="field"><label>IVA (%)</label><input id="kIva" type="number" value="0"></div></div>
     <div class="row"><div class="field"><label>Fecha inicio</label><input id="kFecha" type="date" value="${hoy()}"></div>
       <div class="field"><label>Cuenta de pago (opcional)</label><select id="kCuenta"><option value="">-- sin asociar --</option>${cu.map(c => `<option value="${c.id}">${esc(c.banco)} - ${esc(c.nombre)}</option>`).join('')}</select></div></div>
+    <p class="muted" style="font-size:12px;margin:2px 0">Si no sabes la tasa: ingresa monto, pie y N&deg; cuotas y usa <b>Calcular tasa</b> con el valor de la cuota neta. O importa la tabla en CSV.</p>
+    <div class="row"><button class="btn ghost" onclick="calcularTasaCredito()">Calcular tasa desde la cuota</button> <button class="btn ghost" onclick="var e=document.getElementById('kImp');e.style.display=e.style.display==='none'?'block':'none'">Importar tabla (CSV)</button></div>
+    <div id="kImp" style="display:none;margin-top:8px"><label style="font-size:11px;color:var(--gris)">Columnas: num_cuota; fecha_vencimiento; capital; interes; valor_cuota_neta; iva; valor_cuota_total; saldo_capital; fecha_pago</label>
+      <textarea id="kCSV" rows="4" placeholder="1;2025-06-23;10084034;0;10084034;1915966;12000000;54991102;2025-06-26"></textarea></div>
     <div class="err" id="kErr"></div>
-    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="simularCredito()">Simular tabla</button> <button class="btn" onclick="guardarCredito()">Crear credito</button></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="simularCredito()">Simular</button> <button class="btn" onclick="guardarCredito()">Crear</button></div>
     <div id="kSim"></div>`);
 }
 function credBody() {
-  return { monto: val('kMonto'), tasa_mensual: val('kTasa'), n_cuotas: val('kCuotas'), sistema: val('kSis'), fecha_inicio: val('kFecha') };
+  return { tipo: val('kTipo'), monto: val('kMonto'), pie: val('kPie'), tasa_mensual: val('kTasa'), n_cuotas: val('kCuotas'), sistema: val('kSis'), fecha_inicio: val('kFecha'), iva_pct: val('kIva') };
+}
+async function calcularTasaCredito() {
+  const c = prompt('Valor de la cuota NETA (sin IVA):'); if (!c) return;
+  try { const r = await api('POST', '/creditos/tasa-desde-cuota', { monto: val('kMonto'), pie: val('kPie'), n_cuotas: val('kCuotas'), cuota_neta: c }); document.getElementById('kTasa').value = r.tasa_mensual; }
+  catch (e) { $('#kErr').textContent = e.message; }
+}
+function parseLeasingCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== ''); if (!lines.length) return [];
+  const sep = (lines[0].match(/;/g) || []).length >= (lines[0].match(/,/g) || []).length ? ';' : ',';
+  const H = lines[0].split(sep).map(h => h.trim().toLowerCase());
+  const idx = (...names) => H.findIndex(h => names.some(n => h.includes(n)));
+  const iNum = idx('num', 'nro', 'n\u00b0'), iFe = idx('vencim', 'fecha_venc', 'venc'), iCap = idx('capital', 'amortiz'), iInt = idx('interes', 'inter\u00e9s'),
+    iNeta = idx('neta', 'neto'), iIva = idx('iva'), iTot = idx('total'), iSal = idx('saldo'), iPag = idx('pago');
+  const num = s => { if (s == null) return 0; let v = String(s).replace(/[^0-9,.\-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.'); return Number(v) || 0; };
+  const out = [];
+  for (let r = 1; r < lines.length; r++) {
+    const c = lines[r].split(sep);
+    const fp = iPag >= 0 ? String(c[iPag] || '').trim() : '';
+    out.push({ numero: iNum >= 0 ? num(c[iNum]) : r, fecha_venc: (iFe >= 0 ? String(c[iFe]) : '').trim().slice(0, 10),
+      amortizacion: iCap >= 0 ? num(c[iCap]) : 0, interes: iInt >= 0 ? num(c[iInt]) : 0,
+      cuota_neta: iNeta >= 0 ? num(c[iNeta]) : 0, iva: iIva >= 0 ? num(c[iIva]) : 0,
+      cuota: iTot >= 0 ? num(c[iTot]) : 0, saldo: iSal >= 0 ? num(c[iSal]) : 0,
+      fecha_pago: (fp && fp.toLowerCase() !== 'nan') ? fp.slice(0, 10) : null });
+  }
+  return out;
 }
 async function simularCredito() {
   try {
@@ -340,19 +375,23 @@ async function simularCredito() {
 }
 async function guardarCredito() {
   try {
-    await api('POST', '/creditos', { banco: val('kBanco'), nombre: val('kNom'), cuenta_id: val('kCuenta'), ...credBody() });
+    const body = { banco: val('kBanco'), nombre: val('kNom'), cuenta_id: val('kCuenta'), ...credBody() };
+    const csv = val('kCSV'); if (csv) body.tabla = parseLeasingCSV(csv);
+    if (!body.banco) { $('#kErr').textContent = 'Ingresa el banco/arrendador'; return; }
+    await api('POST', '/creditos', body);
     closeModal(); vCreditos();
   } catch (e) { $('#kErr').textContent = e.message; }
 }
 function tablaAmort(filas, conPago) {
-  return `<div class="scroll" style="margin-top:14px"><table><tr><th>N°</th><th>Vence</th><th class="num">Cuota</th><th class="num">Interes</th><th class="num">Amortizacion</th><th class="num">Saldo</th>${conPago ? '<th></th>' : ''}</tr>
-    ${filas.map(f => `<tr><td>${f.numero}</td><td>${fdate(f.fecha_venc)}</td><td class="num">${clp(f.cuota)}</td><td class="num">${clp(f.interes)}</td><td class="num">${clp(f.amortizacion)}</td><td class="num">${clp(f.saldo)}</td>${conPago ? `<td>${f.pagado ? '<span class="pill ok">PAGADA</span>' : `<button class="btn sm green" onclick="pagarCuota(${f._cid},${f.numero})">pagar</button>`}</td>` : ''}</tr>`).join('')}</table></div>`;
+  const hayIva = filas.some(f => f.iva);
+  return `<div class="scroll" style="margin-top:14px"><table><tr><th>N&deg;</th><th>Vence</th><th class="num">Capital</th><th class="num">Interes</th>${hayIva ? '<th class="num">Cuota neta</th><th class="num">IVA</th>' : ''}<th class="num">Cuota${hayIva ? ' total' : ''}</th><th class="num">Saldo</th>${conPago ? '<th></th>' : ''}</tr>
+    ${filas.map(f => `<tr style="${f.pagado ? 'background:#eafaf0' : ''}"><td>${f.numero}</td><td>${fdate(f.fecha_venc)}</td><td class="num">${clp(f.amortizacion)}</td><td class="num">${clp(f.interes)}</td>${hayIva ? `<td class="num">${clp(f.cuota_neta)}</td><td class="num">${clp(f.iva)}</td>` : ''}<td class="num"><b>${clp(f.cuota)}</b></td><td class="num">${clp(f.saldo)}</td>${conPago ? `<td>${f.pagado ? '<span class="pill ok">PAGADA</span>' : `<button class="btn sm green" onclick="pagarCuota(${f._cid},${f.numero})">pagar</button>`}</td>` : ''}</tr>`).join('')}</table></div>`;
 }
 async function verCredito(id) {
   const c = await api('GET', '/creditos/' + id);
   c.cuotas.forEach(q => q._cid = id);
-  modal(`<h3>${esc(c.banco)} - ${esc(c.nombre)} <span class="muted">(${c.sistema})</span></h3>
-    <p class="muted">Monto ${clp(c.monto)} · ${num(c.tasa_mensual,2)}% mensual · ${c.n_cuotas} cuotas</p>
+  modal(`<h3>${esc(c.banco)} - ${esc(c.nombre)} <span class="muted">(${c.tipo||'CREDITO'} / ${c.sistema})</span></h3>
+    <p class="muted">${c.tipo || 'CREDITO'} · Monto ${clp(c.monto)}${c.pie ? ' · Pie ' + clp(c.pie) : ''} · ${num(c.tasa_mensual,2)}% mensual · ${c.n_cuotas} cuotas${c.iva_pct ? ' · IVA ' + c.iva_pct + '%' : ''}</p>
     ${tablaAmort(c.cuotas, true)}
     <div class="right" style="margin-top:14px"><button class="btn red" onclick="delCredito(${id})">Eliminar credito</button> <button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
 }
