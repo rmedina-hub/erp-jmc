@@ -154,4 +154,13 @@ router.post('/tasa-desde-cuota', (req, res) => {
   res.json({ tasa_mensual: r2(tasaDesdeCuota(P, req.body.n_cuotas, req.body.cuota_neta)) });
 });
 
+router.put('/:id', (req, res) => {
+  const b = req.body; const c = db.prepare('SELECT * FROM creditos WHERE id=?').get(req.params.id);
+  if (!c) return res.status(404).json({ error: 'No existe' });
+  db.prepare('UPDATE creditos SET banco=?, nombre=?, glosa=?, tipo=?, cuenta_id=?, estado=? WHERE id=?')
+    .run(b.banco != null ? b.banco : c.banco, b.nombre != null ? b.nombre : c.nombre, b.glosa != null ? b.glosa : c.glosa,
+      b.tipo || c.tipo, (b.cuenta_id === '' ? null : (b.cuenta_id != null ? b.cuenta_id : c.cuenta_id)), b.estado || c.estado, req.params.id);
+  res.json(db.prepare('SELECT * FROM creditos WHERE id=?').get(req.params.id));
+});
+
 module.exports = router;

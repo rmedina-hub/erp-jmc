@@ -315,7 +315,7 @@ async function vCreditos() {
   const creds = await api('GET', '/creditos');
   C().innerHTML = `<div class="card"><h3>Creditos bancarios <button class="btn" onclick="formCredito()">+ Nuevo credito</button></h3>
     <div class="scroll"><table><tr><th>Banco</th><th>Nombre</th><th>Tipo</th><th>Sistema</th><th class="num">Monto</th><th class="num">Tasa mens.</th><th>Cuotas</th><th class="num">Saldo pend.</th><th>Estado</th><th></th></tr>
-    ${creds.length ? creds.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}${c.glosa?`<br><span class="muted" style="font-size:11px">${esc(c.glosa)}</span>`:''}</td><td>${c.tipo||'CREDITO'}</td><td>${c.sistema}</td><td class="num">${clp(c.monto)}</td><td class="num">${num(c.tasa_mensual,2)}%</td><td>${c.cuotas_pagadas}/${c.cuotas_total}</td><td class="num">${clp(c.saldo_pendiente)}</td><td><span class="pill ${c.estado==='PAGADO'?'ok':'warn'}">${c.estado}</span></td><td><button class="btn sm ghost" onclick="verCredito(${c.id})">Tabla</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Sin creditos registrados</td></tr>'}</table></div></div>`;
+    ${creds.length ? creds.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}${c.glosa?`<br><span class="muted" style="font-size:11px">${esc(c.glosa)}</span>`:''}</td><td>${c.tipo||'CREDITO'}</td><td>${c.sistema}</td><td class="num">${clp(c.monto)}</td><td class="num">${num(c.tasa_mensual,2)}%</td><td>${c.cuotas_pagadas}/${c.cuotas_total}</td><td class="num">${clp(c.saldo_pendiente)}</td><td><span class="pill ${c.estado==='PAGADO'?'ok':'warn'}">${c.estado}</span></td><td><button class="btn sm ghost" onclick="verCredito(${c.id})">Tabla</button> <button class="btn sm ghost" onclick="editarCredito(${c.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Sin creditos registrados</td></tr>'}</table></div></div>`;
 }
 async function formCredito() {
   const cu = await api('GET', '/tesoreria/cuentas');
@@ -394,11 +394,27 @@ async function verCredito(id) {
   modal(`<h3>${esc(c.banco)} - ${esc(c.nombre)} <span class="muted">(${c.tipo||'CREDITO'} / ${c.sistema})</span></h3>
     <p class="muted">${c.tipo || 'CREDITO'} · Monto ${clp(c.monto)}${c.pie ? ' · Pie ' + clp(c.pie) : ''} · ${num(c.tasa_mensual,2)}% mensual · ${c.n_cuotas} cuotas${c.iva_pct ? ' · IVA ' + c.iva_pct + '%' : ''}</p>${c.glosa ? `<p style="margin-top:-6px"><b>Destino:</b> ${esc(c.glosa)}</p>` : ''}
     ${tablaAmort(c.cuotas, true)}
-    <div class="right" style="margin-top:14px"><button class="btn red" onclick="delCredito(${id})">Eliminar credito</button> <button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+    <div class="right" style="margin-top:14px"><button class="btn red" onclick="delCredito(${id})">Eliminar</button> <button class="btn ghost" onclick="editarCredito(${id})">Editar datos</button> <button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
 }
 async function pagarCuota(cid, numero) {
   await api('POST', `/creditos/${cid}/cuotas/${numero}/pagar`, { fecha_pago: hoy() });
   verCredito(cid);
+}
+async function editarCredito(id) {
+  const [c, cu] = await Promise.all([api('GET', '/creditos/' + id), api('GET', '/tesoreria/cuentas')]);
+  modal(`<h3>Editar credito / leasing</h3>
+    <div class="row"><div class="field"><label>Banco / Arrendador</label><input id="eBanco" value="${esc(c.banco || '')}"></div><div class="field"><label>Nombre / N&deg; operacion</label><input id="eNom" value="${esc(c.nombre || '')}"></div></div>
+    <div class="row"><div class="field"><label>Glosa / destino (&iquest;para que fue?)</label><input id="eGlosa" value="${esc(c.glosa || '')}" placeholder="Ej: Fogape, compra camion, maquinaria"></div></div>
+    <div class="row"><div class="field"><label>Tipo</label><select id="eTipo"><option value="CREDITO" ${c.tipo !== 'LEASING' ? 'selected' : ''}>Credito</option><option value="LEASING" ${c.tipo === 'LEASING' ? 'selected' : ''}>Leasing</option></select></div>
+      <div class="field"><label>Estado</label><select id="eEstado"><option ${c.estado === 'VIGENTE' ? 'selected' : ''}>VIGENTE</option><option ${c.estado === 'PAGADO' ? 'selected' : ''}>PAGADO</option></select></div></div>
+    <div class="row"><div class="field"><label>Cuenta de pago</label><select id="eCuenta"><option value="">-- sin asociar --</option>${cu.map(x => `<option value="${x.id}" ${x.id == c.cuenta_id ? 'selected' : ''}>${esc(x.banco)} - ${esc(x.nombre)}</option>`).join('')}</select></div></div>
+    <p class="muted" style="font-size:12px">Edita los datos descriptivos. El monto, la tasa y la tabla de cuotas no cambian aqui.</p>
+    <div class="err" id="eErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarEdicionCredito(${id})">Guardar</button></div>`);
+}
+async function guardarEdicionCredito(id) {
+  try { await api('PUT', '/creditos/' + id, { banco: val('eBanco'), nombre: val('eNom'), glosa: val('eGlosa'), tipo: val('eTipo'), estado: val('eEstado'), cuenta_id: val('eCuenta') }); closeModal(); vCreditos(); }
+  catch (e) { $('#eErr').textContent = e.message; }
 }
 async function delCredito(id) { if (confirm('Eliminar credito y su tabla?')) { await api('DELETE', '/creditos/' + id); closeModal(); vCreditos(); } }
 
