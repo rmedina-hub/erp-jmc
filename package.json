@@ -1,0 +1,17 @@
+{
+  "name": "erp-jmc",
+  "version": "1.0.0",
+  "description": "ERP web multiusuario: Inventario PMP, Tesoreria, Amortizacion de creditos y Activos fijos",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": { "node": ">=22.5.0" },
+  "scripts": {
+    "start": "node --experimental-sqlite server.js",
+    "seed": "node --experimental-sqlite seed.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}

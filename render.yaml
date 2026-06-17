@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: erp-jmc
+    runtime: docker
+    plan: starter            # plan con disco persistente (los datos se conservan)
+    envVars:
+      - key: ERP_SECRET
+        generateValue: true  # clave secreta para los tokens (se genera sola)
+      - key: ERP_DB
+        value: /data/erp.db
+      - key: PORT
+        value: 3000
+    disk:
+      name: erp-data
+      mountPath: /data        # aquí vive la base de datos compartida
+      sizeGB: 1
+    healthCheckPath: /api/health
