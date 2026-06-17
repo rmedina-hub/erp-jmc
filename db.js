@@ -105,19 +105,29 @@ try { db.exec('ALTER TABLE credito_cuotas ADD COLUMN cuota_neta REAL DEFAULT 0')
 (function ensureUsuariosIniciales() {
   const tmp = bcrypt.hashSync('Jmc2026.', 10);
   const users = [
-    ['R. Medina', 'rmedina@jmcingenieria.cl', 'admin', 'jmc'],
-    ['J. Palma', 'jpalma@jmcingenieria.cl', 'usuario', 'jmc'],
-    ['Administracion 1', 'administracion1@jmcingenieria.cl', 'usuario', 'jmc'],
-    ['G. Valles', 'gvalles@jmcingenieria.cl', 'usuario', 'jmc'],
-    ['Finanzas', 'finanzas@jmcingenieria.cl', 'usuario', 'jmc'],
-    ['Administracion 2', 'administracion2@jmcingenieria.cl', 'usuario', 'jmc'],
-    ['Adrian', 'adrian@jmcingenieria.cl', 'usuario', null]
+    ['Robin Medina', 'rmedina@jmcingenieria.cl', 'admin', 'jmc'],
+    ['Johanna Palma', 'jpalma@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['Mariana Duran', 'administracion1@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['Genesis Valles', 'gvalles@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['Adrian Yanez', 'finanzas@jmcingenieria.cl', 'usuario', null],
+    ['Maria Isabel Slatter', 'administracion2@jmcingenieria.cl', 'usuario', 'jmc']
   ];
   const existe = db.prepare('SELECT 1 FROM usuarios WHERE email=?');
   const ins = db.prepare('INSERT INTO usuarios (nombre,email,password_hash,rol,empresa) VALUES (?,?,?,?,?)');
   for (const [nombre, email, rol, empresa] of users) {
     if (!existe.get(email)) ins.run(nombre, email, tmp, rol, empresa);
   }
+})();
+
+(function fixUsuarios() {
+  try {
+    const upd = db.prepare('UPDATE usuarios SET nombre=?, empresa=? WHERE email=?');
+    [['Robin Medina', 'jmc', 'rmedina@jmcingenieria.cl'], ['Johanna Palma', 'jmc', 'jpalma@jmcingenieria.cl'],
+     ['Mariana Duran', 'jmc', 'administracion1@jmcingenieria.cl'], ['Genesis Valles', 'jmc', 'gvalles@jmcingenieria.cl'],
+     ['Adrian Yanez', null, 'finanzas@jmcingenieria.cl'], ['Maria Isabel Slatter', 'jmc', 'administracion2@jmcingenieria.cl']
+    ].forEach(u => upd.run(u[0], u[1], u[2]));
+    db.prepare("DELETE FROM usuarios WHERE email='adrian@jmcingenieria.cl'").run();
+  } catch (e) {}
 })();
 
 module.exports = db;
