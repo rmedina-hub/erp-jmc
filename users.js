@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
 const { sign, auth, admin } = require('./auth');
+const { audit, auditRaw } = require('./audit');
 const router = express.Router();
 
 router.post('/login', (req, res) => {
@@ -9,6 +10,7 @@ router.post('/login', (req, res) => {
   const u = db.prepare('SELECT * FROM usuarios WHERE email=? AND activo=1').get((email || '').toLowerCase().trim());
   if (!u || !bcrypt.compareSync(password || '', u.password_hash))
     return res.status(401).json({ error: 'Credenciales invalidas' });
+  auditRaw({ usuario_id: u.id, usuario_nombre: u.nombre, usuario_email: u.email, rol: u.rol, empresa: u.empresa || null, modulo: 'Sesion', accion: 'Inicio de sesion', detalle: null });
   res.json({ token: sign(u), usuario: { id: u.id, nombre: u.nombre, email: u.email, rol: u.rol, empresa: u.empresa || null } });
 });
 
@@ -25,6 +27,7 @@ router.post('/', auth, admin, (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     const r = db.prepare('INSERT INTO usuarios (nombre,email,password_hash,rol,empresa) VALUES (?,?,?,?,?)')
       .run(nombre, email.toLowerCase().trim(), hash, rol === 'admin' ? 'admin' : 'usuario', empresa || null);
+    audit(req, 'Usuarios', 'Crear usuario', email.toLowerCase().trim() + ' (' + (rol === 'admin' ? 'admin' : 'usuario') + ')');
     res.json(db.prepare('SELECT id,nombre,email,rol,activo,empresa FROM usuarios WHERE id=?').get(r.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'email ya registrado' }); }
 });
@@ -35,6 +38,7 @@ router.put('/:id', auth, admin, (req, res) => {
   const hash = password ? bcrypt.hashSync(password, 10) : u.password_hash;
   db.prepare('UPDATE usuarios SET nombre=?, rol=?, activo=?, password_hash=? WHERE id=?')
     .run(nombre ?? u.nombre, rol ?? u.rol, activo == null ? u.activo : (activo ? 1 : 0), hash, req.params.id);
+  audit(req, 'Usuarios', password ? 'Resetear clave / editar usuario' : 'Editar usuario', u.email);
   res.json({ ok: true });
 });
 
@@ -45,6 +49,7 @@ router.post('/cambiar-password', auth, (req, res) => {
   if (!u || !bcrypt.compareSync(actual || '', u.password_hash)) return res.status(400).json({ error: 'La contrasena actual no es correcta' });
   if (!nueva || nueva.length < 6) return res.status(400).json({ error: 'La nueva contrasena debe tener al menos 6 caracteres' });
   db.prepare('UPDATE usuarios SET password_hash=? WHERE id=?').run(bcrypt.hashSync(nueva, 10), u.id);
+  audit(req, 'Usuarios', 'Cambio de contrasena propia', u.email);
   res.json({ ok: true });
 });
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('./db');
 const { auth } = require('./auth');
+const { audit } = require('./audit');
 const router = express.Router();
 router.use(auth);
 
@@ -24,6 +25,7 @@ router.post('/', (req, res) => {
   try {
     const r = db.prepare(`INSERT INTO activos (codigo,nombre,categoria,marca,modelo,patente,fecha_compra,valor_compra,proveedor,factura,estado,empresa)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(b.codigo, b.nombre, b.categoria || null, b.marca || null, b.modelo || null, b.patente || null, b.fecha_compra || null, Number(b.valor_compra) || 0, b.proveedor || null, b.factura || null, b.estado || 'EN_USO', req.empresa);
+    audit(req, 'Activos', 'Crear activo', (b.codigo || '') + ' - ' + (b.nombre || ''));
     res.json(db.prepare('SELECT * FROM activos WHERE id=?').get(r.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'codigo duplicado' }); }
 });
@@ -35,6 +37,7 @@ router.put('/:id', (req, res) => {
       b.marca != null ? b.marca : a.marca, b.modelo != null ? b.modelo : a.modelo, b.patente != null ? b.patente : a.patente,
       b.fecha_compra != null ? b.fecha_compra : a.fecha_compra, b.valor_compra != null ? Number(b.valor_compra) : a.valor_compra,
       b.proveedor != null ? b.proveedor : a.proveedor, b.factura != null ? b.factura : a.factura, b.estado || a.estado, req.params.id, req.empresa);
+  audit(req, 'Activos', 'Editar activo', (a.codigo || '') + ' - ' + (b.nombre != null ? b.nombre : a.nombre));
   res.json(db.prepare('SELECT * FROM activos WHERE id=?').get(req.params.id));
 });
 router.get('/:id', (req, res) => {
@@ -49,6 +52,7 @@ router.delete('/:id', (req, res) => {
   const a = activoDeEmpresa(req.params.id, req.empresa);
   if (!a) return res.status(404).json({ error: 'No existe' });
   db.prepare('DELETE FROM activos WHERE id=?').run(req.params.id);
+  audit(req, 'Activos', 'Eliminar activo', (a.codigo || '') + ' - ' + (a.nombre || ''));
   res.json({ ok: true });
 });
 
@@ -59,6 +63,7 @@ router.post('/:id/kilometrajes', (req, res) => {
   if (!activoDeEmpresa(req.params.id, req.empresa)) return res.status(404).json({ error: 'Activo no existe' });
   const r = db.prepare('INSERT INTO activo_kilometrajes (activo_id,fecha,km,glosa,empresa) VALUES (?,?,?,?,?)')
     .run(req.params.id, fecha || new Date().toISOString().slice(0,10), Number(km), glosa || null, req.empresa);
+  audit(req, 'Activos', 'Registrar kilometraje', 'Activo ' + req.params.id + ': ' + Number(km) + ' km');
   res.json(db.prepare('SELECT * FROM activo_kilometrajes WHERE id=?').get(r.lastInsertRowid));
 });
 
@@ -69,6 +74,7 @@ router.post('/:id/seguros', (req, res) => {
   if (!activoDeEmpresa(req.params.id, req.empresa)) return res.status(404).json({ error: 'Activo no existe' });
   const r = db.prepare(`INSERT INTO activo_seguros (activo_id,compania,poliza,fecha_inicio,fecha_vencimiento,prima,glosa,empresa)
     VALUES (?,?,?,?,?,?,?,?)`).run(req.params.id, compania || null, poliza || null, fecha_inicio || null, fecha_vencimiento, Number(prima) || 0, glosa || null, req.empresa);
+  audit(req, 'Activos', 'Agregar seguro', 'Activo ' + req.params.id + ' vence ' + fecha_vencimiento);
   res.json(db.prepare('SELECT * FROM activo_seguros WHERE id=?').get(r.lastInsertRowid));
 });
 router.delete('/seguros/:sid', (req, res) => {
@@ -84,6 +90,7 @@ router.post('/:id/documentos', (req, res) => {
   if (!activoDeEmpresa(req.params.id, req.empresa)) return res.status(404).json({ error: 'Activo no existe' });
   const r = db.prepare(`INSERT INTO activo_documentos (activo_id,tipo,numero,fecha_emision,fecha_vencimiento,glosa,empresa)
     VALUES (?,?,?,?,?,?,?)`).run(req.params.id, tipo, numero || null, fecha_emision || null, fecha_vencimiento, glosa || null, req.empresa);
+  audit(req, 'Activos', 'Agregar documento', tipo + ' (activo ' + req.params.id + ') vence ' + fecha_vencimiento);
   res.json(db.prepare('SELECT * FROM activo_documentos WHERE id=?').get(r.lastInsertRowid));
 });
 router.delete('/documentos/:did', (req, res) => {

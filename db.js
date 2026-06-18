@@ -94,6 +94,11 @@ CREATE TABLE IF NOT EXISTS flujo_proyeccion (
   monto REAL NOT NULL DEFAULT 0, probabilidad REAL NOT NULL DEFAULT 100, cliente TEXT,
   extra_contable INTEGER NOT NULL DEFAULT 0, empresa TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
 
+CREATE TABLE IF NOT EXISTS auditoria (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT (datetime('now')),
+  usuario_id INTEGER, usuario_nombre TEXT, usuario_email TEXT, rol TEXT, empresa TEXT,
+  modulo TEXT, accion TEXT, detalle TEXT);
+
 CREATE TABLE IF NOT EXISTS _meta (clave TEXT PRIMARY KEY, valor TEXT);
 `);
 
@@ -123,6 +128,7 @@ const ADD_COLS = [
   "ALTER TABLE flujo_proyeccion ADD COLUMN empresa TEXT"
 ];
 for (const sql of ADD_COLS) { try { db.exec(sql); } catch (e) {} }
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_auditoria_emp_ts ON auditoria(empresa, ts)'); } catch (e) {}
 
 // ---- Backfill: todos los datos preexistentes (empresa NULL) pasan a JMC ----
 const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancarias', 'tes_movimientos',

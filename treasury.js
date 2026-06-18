@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('./db');
 const { auth } = require('./auth');
+const { audit } = require('./audit');
 const router = express.Router();
 router.use(auth);
 
@@ -25,6 +26,7 @@ router.post('/cuentas', (req, res) => {
   if (!banco || !nombre) return res.status(400).json({ error: 'banco y nombre requeridos' });
   const r = db.prepare('INSERT INTO cuentas_bancarias (banco,nombre,numero,moneda,saldo_inicial,empresa) VALUES (?,?,?,?,?,?)')
     .run(banco, nombre, numero || null, moneda || 'CLP', Number(saldo_inicial) || 0, req.empresa);
+  audit(req, 'Tesoreria', 'Crear cuenta', banco + ' - ' + nombre);
   res.json(db.prepare('SELECT * FROM cuentas_bancarias WHERE id=?').get(r.lastInsertRowid));
 });
 
@@ -46,6 +48,7 @@ router.post('/movimientos', (req, res) => {
   const r = db.prepare(`INSERT INTO tes_movimientos (fecha,cuenta_id,tipo,categoria,monto,glosa,documento,usuario_id,empresa)
     VALUES (?,?,?,?,?,?,?,?,?)`).run(fecha || new Date().toISOString().slice(0,10), cuenta_id, tipo,
     categoria || null, Math.abs(Number(monto)), glosa || null, documento || null, req.user.id, req.empresa);
+  audit(req, 'Tesoreria', tipo, Math.abs(Number(monto)) + (glosa ? ' - ' + glosa : ''));
   res.json(db.prepare('SELECT * FROM tes_movimientos WHERE id=?').get(r.lastInsertRowid));
 });
 router.delete('/movimientos/:id', (req, res) => {
@@ -53,6 +56,7 @@ router.delete('/movimientos/:id', (req, res) => {
   if (!m) return res.status(404).json({ error: 'No existe' });
   db.prepare('UPDATE cartola_lineas SET conciliado=0, movimiento_id=NULL WHERE movimiento_id=?').run(req.params.id);
   db.prepare('DELETE FROM tes_movimientos WHERE id=? AND empresa=?').run(req.params.id, req.empresa);
+  audit(req, 'Tesoreria', 'Eliminar movimiento', m.tipo + ' ' + m.monto + (m.glosa ? ' - ' + m.glosa : ''));
   res.json({ ok: true });
 });
 
@@ -106,6 +110,7 @@ router.post('/cartola/import', (req, res) => {
     for (const l of arr) ins.run(cuenta_id, l.fecha || null, l.descripcion || null, Number(l.cargo) || 0, Number(l.abono) || 0, l.saldo == null ? null : Number(l.saldo), lote, req.empresa);
   });
   tx(lineas);
+  audit(req, 'Tesoreria', 'Importar cartola', lineas.length + ' lineas (cuenta ' + cuenta_id + ')');
   res.json({ ok: true, importadas: lineas.length, lote });
 });
 
@@ -162,6 +167,7 @@ router.post('/conciliacion/auto', (req, res) => {
     }
   });
   tx();
+  audit(req, 'Tesoreria', 'Conciliacion automatica', conciliadas + ' conciliadas (cuenta ' + cuenta_id + ')');
   res.json({ ok: true, conciliadas });
 });
 

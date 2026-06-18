@@ -42,7 +42,7 @@ async function doLogin(e) {
     $('#app').style.display = 'block';
     $('#userName').textContent = USER.nombre;
     $('#userRol').textContent = '(' + USER.rol + ')';
-    if (USER.rol !== 'admin') $('#navUsuarios').style.display = 'none';
+    if (USER.rol !== 'admin') { $('#navUsuarios').style.display = 'none'; const na = document.getElementById('navAuditoria'); if (na) na.style.display = 'none'; }
     if (USER.empresa && BRANDS[USER.empresa]) selectEmpresa(USER.empresa);
     const _sw = document.getElementById('empresaSwitch');
     if (_sw) _sw.style.display = (!USER.empresa) ? '' : 'none';
@@ -52,11 +52,11 @@ async function doLogin(e) {
 function logout() { TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', usuarios: 'Usuarios' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', usuarios: 'Usuarios', auditoria: 'Auditoria' };
 function go(v) {
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, usuarios: vUsuarios }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, usuarios: vUsuarios, auditoria: vAuditoria }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
 
@@ -677,6 +677,50 @@ async function simularEscenario() {
     <div class="kpi"><div class="lbl">Saldo minimo alcanzado (escenario)</div><div class="val" style="color:${minSaldo(escn) < min ? 'var(--rojo)' : 'var(--verde)'}">${clp(minSaldo(escn))}</div></div>
   </div>
   ${escn.alertas.length ? `<div class="card" style="border-left:4px solid var(--rojo);background:#fdeded"><b style="color:var(--rojo)">⚠ En este escenario hay deficit</b> en: ${escn.alertas.map(a => a.periodo + ' (' + clp(a.saldo) + ')').join(', ')}. Considera renegociar plazos o asegurar la cobranza.</div>` : `<div class="card" style="border-left:4px solid var(--verde);background:#eafaf0"><b style="color:var(--verde)">El flujo resiste este escenario</b> sin caer bajo el minimo.</div>`}`;
+}
+
+// ===================== AUDITORIA (historial) =====================
+const AUDIT_MODS = ['Sesion', 'Inventario', 'Tesoreria', 'Creditos', 'Activos', 'Flujo', 'Usuarios'];
+async function vAuditoria() {
+  C().innerHTML = '<div class="empty">Cargando...</div>';
+  let usuarios = [];
+  try { usuarios = await api('GET', '/auditoria/usuarios'); } catch (e) {}
+  const ambas = !USER.empresa;
+  C().innerHTML = `<div class="card">
+    <h3>Historial de auditoria</h3>
+    <p class="muted">Registro de inicios de sesion y de toda creacion, edicion o eliminacion en el sistema.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:14px 0">
+      <div><label class="lbl">Usuario</label><select id="auUsuario"><option value="">Todos</option>${usuarios.map(u => `<option value="${esc(u.usuario_email)}">${esc(u.usuario_nombre || u.usuario_email)}</option>`).join('')}</select></div>
+      <div><label class="lbl">Modulo</label><select id="auModulo"><option value="">Todos</option>${AUDIT_MODS.map(m => `<option>${m}</option>`).join('')}</select></div>
+      <div><label class="lbl">Desde</label><input type="date" id="auDesde"></div>
+      <div><label class="lbl">Hasta</label><input type="date" id="auHasta"></div>
+      <div><label class="lbl">Buscar</label><input type="text" id="auQ" placeholder="texto en detalle"></div>
+      ${ambas ? `<div><label class="lbl">&nbsp;</label><label style="display:flex;align-items:center;gap:6px;height:38px"><input type="checkbox" id="auTodas"> Ambas empresas</label></div>` : ''}
+      <div><label class="lbl">&nbsp;</label><button class="btn" onclick="cargarAuditoria()">Filtrar</button></div>
+    </div>
+    <div id="auTabla"><div class="empty">Cargando...</div></div>
+  </div>`;
+  cargarAuditoria();
+}
+async function cargarAuditoria() {
+  const qs = [];
+  const u = val('auUsuario'), m = val('auModulo'), d = val('auDesde'), h = val('auHasta'), q = val('auQ');
+  const todasEl = document.getElementById('auTodas');
+  if (u) qs.push('usuario=' + encodeURIComponent(u));
+  if (m) qs.push('modulo=' + encodeURIComponent(m));
+  if (d) qs.push('desde=' + d);
+  if (h) qs.push('hasta=' + h);
+  if (q) qs.push('q=' + encodeURIComponent(q));
+  if (todasEl && todasEl.checked) qs.push('todas=1');
+  const cont = document.getElementById('auTabla');
+  try {
+    const rows = await api('GET', '/auditoria' + (qs.length ? '?' + qs.join('&') : ''));
+    const fmt = (ts) => { if (!ts) return ''; const dt = new Date(ts.replace(' ', 'T') + 'Z'); return isNaN(dt) ? ts : dt.toLocaleString('es-CL'); };
+    if (!rows.length) { cont.innerHTML = '<div class="empty">Sin registros para el filtro seleccionado.</div>'; return; }
+    cont.innerHTML = `<table><tr><th>Fecha y hora</th><th>Usuario</th><th>Empresa</th><th>Modulo</th><th>Accion</th><th>Detalle</th></tr>
+      ${rows.map(r => `<tr><td>${fmt(r.ts)}</td><td>${esc(r.usuario_nombre || r.usuario_email || '-')}</td><td>${r.empresa && BRANDS[r.empresa] ? esc(BRANDS[r.empresa].nombre) : esc(r.empresa || '-')}</td><td>${esc(r.modulo || '')}</td><td>${esc(r.accion || '')}</td><td>${esc(r.detalle || '')}</td></tr>`).join('')}</table>
+      <p class="muted" style="margin-top:8px">Mostrando ${rows.length} registro(s), mas recientes primero (maximo 500).</p>`;
+  } catch (e) { cont.innerHTML = '<div class="empty">Error al cargar el historial: ' + esc(e.message) + '</div>'; }
 }
 
 // ===================== BRANDING MULTI-EMPRESA =====================

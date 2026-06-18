@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('./db');
 const { auth } = require('./auth');
+const { audit } = require('./audit');
 const router = express.Router();
 router.use(auth);
 
@@ -118,6 +119,7 @@ router.post('/', (req, res) => {
     return cid;
   });
   const id = tx();
+  audit(req, 'Creditos', 'Crear ' + tipo, (b.banco || '') + ' - ' + (b.nombre || b.banco || ''));
   res.json(db.prepare('SELECT * FROM creditos WHERE id=?').get(id));
 });
 
@@ -132,6 +134,7 @@ router.delete('/:id', (req, res) => {
   const c = db.prepare('SELECT id FROM creditos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
   if (!c) return res.status(404).json({ error: 'No existe' });
   db.prepare('DELETE FROM creditos WHERE id=?').run(req.params.id);
+  audit(req, 'Creditos', 'Eliminar credito', (c.banco || '') + ' - ' + (c.nombre || ''));
   res.json({ ok: true });
 });
 
@@ -154,6 +157,7 @@ router.post('/:id/cuotas/:numero/pagar', (req, res) => {
     if (pend === 0) db.prepare("UPDATE creditos SET estado='PAGADO' WHERE id=?").run(c.id);
   });
   tx();
+  audit(req, 'Creditos', 'Pagar cuota', c.banco + ' cuota ' + req.params.numero + '/' + c.n_cuotas);
   res.json({ ok: true });
 });
 
@@ -174,6 +178,7 @@ router.put('/:id', (req, res) => {
   db.prepare('UPDATE creditos SET banco=?, nombre=?, glosa=?, tipo=?, cuenta_id=?, estado=? WHERE id=? AND empresa=?')
     .run(b.banco != null ? b.banco : c.banco, b.nombre != null ? b.nombre : c.nombre, b.glosa != null ? b.glosa : c.glosa,
       b.tipo || c.tipo, cuentaId, b.estado || c.estado, req.params.id, req.empresa);
+  audit(req, 'Creditos', 'Editar credito', (b.banco != null ? b.banco : c.banco) + ' - ' + (b.nombre != null ? b.nombre : c.nombre));
   res.json(db.prepare('SELECT * FROM creditos WHERE id=?').get(req.params.id));
 });
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('./db');
 const { auth } = require('./auth');
+const { audit } = require('./audit');
 const router = express.Router();
 router.use(auth);
 
@@ -13,6 +14,7 @@ router.post('/bodegas', (req, res) => {
   if (!codigo || !nombre) return res.status(400).json({ error: 'codigo y nombre requeridos' });
   try {
     const r = db.prepare('INSERT INTO bodegas (codigo,nombre,ubicacion,empresa) VALUES (?,?,?,?)').run(codigo, nombre, ubicacion || null, req.empresa);
+    audit(req, 'Inventario', 'Crear bodega', codigo + ' - ' + nombre);
     res.json(db.prepare('SELECT * FROM bodegas WHERE id=?').get(r.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'codigo duplicado' }); }
 });
@@ -27,6 +29,7 @@ router.post('/productos', (req, res) => {
   try {
     const r = db.prepare('INSERT INTO productos (sku,nombre,unidad,stock_minimo,empresa) VALUES (?,?,?,?,?)')
       .run(sku, nombre, unidad || 'UN', Number(stock_minimo) || 0, req.empresa);
+    audit(req, 'Inventario', 'Crear producto', sku + ' - ' + nombre);
     res.json(db.prepare('SELECT * FROM productos WHERE id=?').get(r.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'sku duplicado' }); }
 });
@@ -36,6 +39,7 @@ router.put('/productos/:id', (req, res) => {
   if (!p) return res.status(404).json({ error: 'No existe' });
   db.prepare('UPDATE productos SET nombre=?, unidad=?, stock_minimo=?, activo=? WHERE id=? AND empresa=?')
     .run(nombre, unidad, Number(stock_minimo) || 0, activo ? 1 : 0, req.params.id, req.empresa);
+  audit(req, 'Inventario', 'Editar producto', (p.sku || '') + ' - ' + (nombre || ''));
   res.json(db.prepare('SELECT * FROM productos WHERE id=?').get(req.params.id));
 });
 
@@ -91,6 +95,7 @@ router.post('/movimientos', (req, res) => {
   try {
     if (!req.body.fecha) req.body.fecha = new Date().toISOString().slice(0, 10);
     const mov = crearMovimiento(req.body, req.user.id, req.empresa);
+    audit(req, 'Inventario', 'Movimiento ' + (req.body.tipo || ''), 'Cant: ' + req.body.cantidad + (req.body.documento ? ' Doc: ' + req.body.documento : ''));
     res.json(mov);
   } catch (e) { res.status(400).json({ error: e.message }); }
 });

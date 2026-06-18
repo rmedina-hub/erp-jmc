@@ -11,6 +11,7 @@ app.use('/api/tesoreria', require('./treasury'));
 app.use('/api/creditos', require('./loans'));
 app.use('/api/flujo', require('./cashflow'));
 app.use('/api/activos', require('./assets'));
+app.use('/api/auditoria', require('./auditoria'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
