@@ -217,10 +217,12 @@ const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancari
 (function fixUsuarios() {
   try {
     const upd = db.prepare('UPDATE usuarios SET nombre=?, empresa=? WHERE email=?');
-    [['Robin Medina', 'jmc', 'rmedina@jmcingenieria.cl'], ['Johanna Palma', 'jmc', 'jpalma@jmcingenieria.cl'],
-     ['Mariana Duran', 'jmc', 'administracion1@jmcingenieria.cl'], ['Genesis Valles', 'jmc', 'gvalles@jmcingenieria.cl'],
-     ['Adrian Yanez', null, 'finanzas@jmcingenieria.cl'], ['Maria Isabel Slatter', 'jmc', 'administracion2@jmcingenieria.cl']
+    [['Robin Medina', null, 'rmedina@jmcingenieria.cl'], ['Johanna Palma', 'jmc', 'jpalma@jmcingenieria.cl'],
+     ['Mariana Duran', 'jmc', 'administracion1@jmcingenieria.cl'], ['Genesis Valles', null, 'gvalles@jmcingenieria.cl'],
+     ['Adrian Yanez', null, 'finanzas@jmcingenieria.cl'], ['Maria Isabel Slatter', null, 'administracion2@jmcingenieria.cl']
     ].forEach(u => upd.run(u[0], u[1], u[2]));
+    // Robin es administrador de ambas empresas
+    db.prepare("UPDATE usuarios SET rol='admin' WHERE email='rmedina@jmcingenieria.cl'").run();
     db.prepare("DELETE FROM usuarios WHERE email='adrian@jmcingenieria.cl'").run();
   } catch (e) {}
 })();
