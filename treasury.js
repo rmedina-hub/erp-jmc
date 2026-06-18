@@ -4,9 +4,14 @@ const { auth } = require('./auth');
 const router = express.Router();
 router.use(auth);
 
+// helper: verifica que la cuenta pertenezca a la empresa activa
+function cuentaDeEmpresa(id, empresa) {
+  return db.prepare('SELECT * FROM cuentas_bancarias WHERE id=? AND empresa=?').get(id, empresa);
+}
+
 // ---------- Cuentas ----------
 router.get('/cuentas', (req, res) => {
-  const cuentas = db.prepare('SELECT * FROM cuentas_bancarias ORDER BY banco, nombre').all();
+  const cuentas = db.prepare('SELECT * FROM cuentas_bancarias WHERE empresa=? ORDER BY banco, nombre').all(req.empresa);
   for (const c of cuentas) {
     const ing = db.prepare(`SELECT COALESCE(SUM(monto),0) s FROM tes_movimientos WHERE cuenta_id=? AND tipo='INGRESO'`).get(c.id).s;
     const egr = db.prepare(`SELECT COALESCE(SUM(monto),0) s FROM tes_movimientos WHERE cuenta_id=? AND tipo='EGRESO'`).get(c.id).s;
@@ -18,16 +23,16 @@ router.get('/cuentas', (req, res) => {
 router.post('/cuentas', (req, res) => {
   const { banco, nombre, numero, moneda, saldo_inicial } = req.body;
   if (!banco || !nombre) return res.status(400).json({ error: 'banco y nombre requeridos' });
-  const r = db.prepare('INSERT INTO cuentas_bancarias (banco,nombre,numero,moneda,saldo_inicial) VALUES (?,?,?,?,?)')
-    .run(banco, nombre, numero || null, moneda || 'CLP', Number(saldo_inicial) || 0);
+  const r = db.prepare('INSERT INTO cuentas_bancarias (banco,nombre,numero,moneda,saldo_inicial,empresa) VALUES (?,?,?,?,?,?)')
+    .run(banco, nombre, numero || null, moneda || 'CLP', Number(saldo_inicial) || 0, req.empresa);
   res.json(db.prepare('SELECT * FROM cuentas_bancarias WHERE id=?').get(r.lastInsertRowid));
 });
 
 // ---------- Movimientos (ingresos / egresos) ----------
 router.get('/movimientos', (req, res) => {
   const { cuenta_id, conciliado } = req.query;
-  let sql = `SELECT m.*, c.banco, c.nombre AS cuenta FROM tes_movimientos m JOIN cuentas_bancarias c ON c.id=m.cuenta_id WHERE 1=1`;
-  const p = [];
+  let sql = `SELECT m.*, c.banco, c.nombre AS cuenta FROM tes_movimientos m JOIN cuentas_bancarias c ON c.id=m.cuenta_id WHERE m.empresa=?`;
+  const p = [req.empresa];
   if (cuenta_id) { sql += ' AND m.cuenta_id=?'; p.push(cuenta_id); }
   if (conciliado === '0' || conciliado === '1') { sql += ' AND m.conciliado=?'; p.push(conciliado); }
   sql += ' ORDER BY m.fecha DESC, m.id DESC LIMIT 1000';
@@ -37,20 +42,21 @@ router.post('/movimientos', (req, res) => {
   const { fecha, cuenta_id, tipo, categoria, monto, glosa, documento } = req.body;
   if (!cuenta_id || !tipo || !monto) return res.status(400).json({ error: 'cuenta, tipo y monto requeridos' });
   if (!['INGRESO', 'EGRESO'].includes(tipo)) return res.status(400).json({ error: 'tipo invalido' });
-  const r = db.prepare(`INSERT INTO tes_movimientos (fecha,cuenta_id,tipo,categoria,monto,glosa,documento,usuario_id)
-    VALUES (?,?,?,?,?,?,?,?)`).run(fecha || new Date().toISOString().slice(0,10), cuenta_id, tipo,
-    categoria || null, Math.abs(Number(monto)), glosa || null, documento || null, req.user.id);
+  if (!cuentaDeEmpresa(cuenta_id, req.empresa)) return res.status(400).json({ error: 'cuenta no pertenece a la empresa' });
+  const r = db.prepare(`INSERT INTO tes_movimientos (fecha,cuenta_id,tipo,categoria,monto,glosa,documento,usuario_id,empresa)
+    VALUES (?,?,?,?,?,?,?,?,?)`).run(fecha || new Date().toISOString().slice(0,10), cuenta_id, tipo,
+    categoria || null, Math.abs(Number(monto)), glosa || null, documento || null, req.user.id, req.empresa);
   res.json(db.prepare('SELECT * FROM tes_movimientos WHERE id=?').get(r.lastInsertRowid));
 });
 router.delete('/movimientos/:id', (req, res) => {
+  const m = db.prepare('SELECT * FROM tes_movimientos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!m) return res.status(404).json({ error: 'No existe' });
   db.prepare('UPDATE cartola_lineas SET conciliado=0, movimiento_id=NULL WHERE movimiento_id=?').run(req.params.id);
-  db.prepare('DELETE FROM tes_movimientos WHERE id=?').run(req.params.id);
+  db.prepare('DELETE FROM tes_movimientos WHERE id=? AND empresa=?').run(req.params.id, req.empresa);
   res.json({ ok: true });
 });
 
 // ---------- Importar cartola ----------
-// Acepta { cuenta_id, csv } (texto) o { cuenta_id, lineas:[...] }
-// CSV: separador ; o ,  con encabezado. Columnas reconocidas: fecha, descripcion/glosa, cargo, abono, monto, saldo
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   if (!lines.length) return [];
@@ -90,13 +96,14 @@ function parseCSV(text) {
 router.post('/cartola/import', (req, res) => {
   const { cuenta_id } = req.body;
   if (!cuenta_id) return res.status(400).json({ error: 'cuenta_id requerido' });
+  if (!cuentaDeEmpresa(cuenta_id, req.empresa)) return res.status(400).json({ error: 'cuenta no pertenece a la empresa' });
   let lineas = req.body.lineas;
   if (!lineas && req.body.csv) lineas = parseCSV(req.body.csv);
   if (!Array.isArray(lineas) || !lineas.length) return res.status(400).json({ error: 'No se reconocieron lineas en la cartola' });
   const lote = 'IMP-' + Date.now();
-  const ins = db.prepare(`INSERT INTO cartola_lineas (cuenta_id,fecha,descripcion,cargo,abono,saldo,lote_importacion) VALUES (?,?,?,?,?,?,?)`);
+  const ins = db.prepare(`INSERT INTO cartola_lineas (cuenta_id,fecha,descripcion,cargo,abono,saldo,lote_importacion,empresa) VALUES (?,?,?,?,?,?,?,?)`);
   const tx = db.transaction((arr) => {
-    for (const l of arr) ins.run(cuenta_id, l.fecha || null, l.descripcion || null, Number(l.cargo) || 0, Number(l.abono) || 0, l.saldo == null ? null : Number(l.saldo), lote);
+    for (const l of arr) ins.run(cuenta_id, l.fecha || null, l.descripcion || null, Number(l.cargo) || 0, Number(l.abono) || 0, l.saldo == null ? null : Number(l.saldo), lote, req.empresa);
   });
   tx(lineas);
   res.json({ ok: true, importadas: lineas.length, lote });
@@ -104,8 +111,8 @@ router.post('/cartola/import', (req, res) => {
 
 router.get('/cartola', (req, res) => {
   const { cuenta_id, conciliado } = req.query;
-  let sql = 'SELECT * FROM cartola_lineas WHERE 1=1';
-  const p = [];
+  let sql = 'SELECT * FROM cartola_lineas WHERE empresa=?';
+  const p = [req.empresa];
   if (cuenta_id) { sql += ' AND cuenta_id=?'; p.push(cuenta_id); }
   if (conciliado === '0' || conciliado === '1') { sql += ' AND conciliado=?'; p.push(conciliado); }
   sql += ' ORDER BY fecha, id';
@@ -119,22 +126,20 @@ function diffDias(a, b) {
   return Math.abs((da - db_) / 86400000);
 }
 
-// Estado: lineas y movimientos pendientes
 router.get('/conciliacion', (req, res) => {
   const { cuenta_id } = req.query;
   if (!cuenta_id) return res.status(400).json({ error: 'cuenta_id requerido' });
-  const lineas = db.prepare('SELECT * FROM cartola_lineas WHERE cuenta_id=? AND conciliado=0 ORDER BY fecha,id').all(cuenta_id);
-  const movs = db.prepare('SELECT * FROM tes_movimientos WHERE cuenta_id=? AND conciliado=0 ORDER BY fecha,id').all(cuenta_id);
+  const lineas = db.prepare('SELECT * FROM cartola_lineas WHERE cuenta_id=? AND empresa=? AND conciliado=0 ORDER BY fecha,id').all(cuenta_id, req.empresa);
+  const movs = db.prepare('SELECT * FROM tes_movimientos WHERE cuenta_id=? AND empresa=? AND conciliado=0 ORDER BY fecha,id').all(cuenta_id, req.empresa);
   res.json({ lineas, movimientos: movs });
 });
 
-// Conciliacion automatica por monto y fecha (tolerancia dias)
 router.post('/conciliacion/auto', (req, res) => {
   const { cuenta_id, tolerancia_dias } = req.body;
   const tol = Number(tolerancia_dias) || 5;
   if (!cuenta_id) return res.status(400).json({ error: 'cuenta_id requerido' });
-  const lineas = db.prepare('SELECT * FROM cartola_lineas WHERE cuenta_id=? AND conciliado=0').all(cuenta_id);
-  const movs = db.prepare('SELECT * FROM tes_movimientos WHERE cuenta_id=? AND conciliado=0').all(cuenta_id);
+  const lineas = db.prepare('SELECT * FROM cartola_lineas WHERE cuenta_id=? AND empresa=? AND conciliado=0').all(cuenta_id, req.empresa);
+  const movs = db.prepare('SELECT * FROM tes_movimientos WHERE cuenta_id=? AND empresa=? AND conciliado=0').all(cuenta_id, req.empresa);
   let conciliadas = 0;
   const tx = db.transaction(() => {
     for (const l of lineas) {
@@ -160,24 +165,25 @@ router.post('/conciliacion/auto', (req, res) => {
   res.json({ ok: true, conciliadas });
 });
 
-// Conciliacion manual
 router.post('/conciliacion/manual', (req, res) => {
   const { cartola_linea_id, movimiento_id } = req.body;
+  const l = db.prepare('SELECT id FROM cartola_lineas WHERE id=? AND empresa=?').get(cartola_linea_id, req.empresa);
+  const m = db.prepare('SELECT id FROM tes_movimientos WHERE id=? AND empresa=?').get(movimiento_id, req.empresa);
+  if (!l || !m) return res.status(404).json({ error: 'Linea o movimiento no encontrado' });
   db.prepare('UPDATE tes_movimientos SET conciliado=1, cartola_linea_id=? WHERE id=?').run(cartola_linea_id, movimiento_id);
   db.prepare('UPDATE cartola_lineas SET conciliado=1, movimiento_id=? WHERE id=?').run(movimiento_id, cartola_linea_id);
   res.json({ ok: true });
 });
 
-// Crear movimiento desde una linea de cartola (y conciliar)
 router.post('/cartola/:id/crear-movimiento', (req, res) => {
-  const l = db.prepare('SELECT * FROM cartola_lineas WHERE id=?').get(req.params.id);
+  const l = db.prepare('SELECT * FROM cartola_lineas WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
   if (!l) return res.status(404).json({ error: 'Linea no existe' });
   const esIngreso = l.abono > 0;
   const tipo = esIngreso ? 'INGRESO' : 'EGRESO';
   const monto = esIngreso ? l.abono : l.cargo;
   const tx = db.transaction(() => {
-    const r = db.prepare(`INSERT INTO tes_movimientos (fecha,cuenta_id,tipo,categoria,monto,glosa,conciliado,cartola_linea_id,usuario_id)
-      VALUES (?,?,?,?,?,?,1,?,?)`).run(l.fecha, l.cuenta_id, tipo, req.body.categoria || 'Cartola', monto, l.descripcion, l.id, req.user.id);
+    const r = db.prepare(`INSERT INTO tes_movimientos (fecha,cuenta_id,tipo,categoria,monto,glosa,conciliado,cartola_linea_id,usuario_id,empresa)
+      VALUES (?,?,?,?,?,?,1,?,?,?)`).run(l.fecha, l.cuenta_id, tipo, req.body.categoria || 'Cartola', monto, l.descripcion, l.id, req.user.id, req.empresa);
     db.prepare('UPDATE cartola_lineas SET conciliado=1, movimiento_id=? WHERE id=?').run(r.lastInsertRowid, l.id);
     return r.lastInsertRowid;
   });
@@ -187,8 +193,9 @@ router.post('/cartola/:id/crear-movimiento', (req, res) => {
 
 router.post('/conciliacion/desconciliar', (req, res) => {
   const { cartola_linea_id } = req.body;
-  const l = db.prepare('SELECT * FROM cartola_lineas WHERE id=?').get(cartola_linea_id);
-  if (l && l.movimiento_id) db.prepare('UPDATE tes_movimientos SET conciliado=0, cartola_linea_id=NULL WHERE id=?').run(l.movimiento_id);
+  const l = db.prepare('SELECT * FROM cartola_lineas WHERE id=? AND empresa=?').get(cartola_linea_id, req.empresa);
+  if (!l) return res.status(404).json({ error: 'Linea no existe' });
+  if (l.movimiento_id) db.prepare('UPDATE tes_movimientos SET conciliado=0, cartola_linea_id=NULL WHERE id=?').run(l.movimiento_id);
   db.prepare('UPDATE cartola_lineas SET conciliado=0, movimiento_id=NULL WHERE id=?').run(cartola_linea_id);
   res.json({ ok: true });
 });

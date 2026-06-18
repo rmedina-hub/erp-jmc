@@ -13,12 +13,11 @@ function addMonths(iso, n) {
 }
 const r2 = (x) => Math.round(x * 100) / 100;
 
-// Genera la tabla de amortizacion. Soporta pie inicial e IVA (leasing).
 function generarTabla({ monto, pie, tasa_mensual, n_cuotas, sistema, fecha_inicio, iva_pct }) {
   const i = Number(tasa_mensual) / 100;
   const n = Number(n_cuotas);
   const ivap = (Number(iva_pct) || 0) / 100;
-  const P = Number(monto) - (Number(pie) || 0); // monto financiado (descontado el pie)
+  const P = Number(monto) - (Number(pie) || 0);
   const filas = [];
   let saldo = P;
   const row = (k, capital, interes) => {
@@ -38,11 +37,10 @@ function generarTabla({ monto, pie, tasa_mensual, n_cuotas, sistema, fecha_inici
   return filas;
 }
 
-// Calcula la tasa mensual (%) a partir del valor de la cuota neta (metodo de Newton).
 function tasaDesdeCuota(P, n, cuotaNeta) {
   P = Number(P); n = Number(n); const c = Number(cuotaNeta);
   if (!(P > 0 && n > 0 && c > 0)) return 0;
-  if (c * n <= P + 0.5) return 0; // sin interes
+  if (c * n <= P + 0.5) return 0;
   let i = 0.01;
   for (let it = 0; it < 200; it++) {
     const f = P * i / (1 - Math.pow(1 + i, -n)) - c;
@@ -59,7 +57,7 @@ function tasaDesdeCuota(P, n, cuotaNeta) {
 }
 
 router.get('/', (req, res) => {
-  const creditos = db.prepare('SELECT * FROM creditos ORDER BY created_at DESC').all();
+  const creditos = db.prepare('SELECT * FROM creditos WHERE empresa=? ORDER BY created_at DESC').all(req.empresa);
   for (const c of creditos) {
     const ag = db.prepare(`SELECT COUNT(*) tot, SUM(pagado) pagadas,
       COALESCE(SUM(CASE WHEN pagado=0 THEN amortizacion ELSE 0 END),0) saldo_pendiente,
@@ -77,13 +75,19 @@ router.post('/', (req, res) => {
   const sis = (b.sistema || 'FRANCES').toUpperCase();
   const pie = Number(b.pie) || 0;
   const ivaPct = Number(b.iva_pct) || 0;
+  const empresa = req.empresa;
+  // si trae cuenta_id, validar que pertenezca a la empresa
+  let cuentaId = b.cuenta_id || null;
+  if (cuentaId) {
+    const cta = db.prepare('SELECT id FROM cuentas_bancarias WHERE id=? AND empresa=?').get(cuentaId, empresa);
+    if (!cta) cuentaId = null;
+  }
   const tx = db.transaction(() => {
     let tasa = Number(b.tasa_mensual) || 0;
     let monto = Number(b.monto) || 0;
     let nCuotas = Number(b.n_cuotas) || 0;
     let filas;
     if (Array.isArray(b.tabla) && b.tabla.length) {
-      // Importar tabla tal cual
       filas = b.tabla.map((r, idx) => ({
         numero: Number(r.numero) || (idx + 1),
         fecha_venc: r.fecha_venc || r.fecha || null,
@@ -99,19 +103,18 @@ router.post('/', (req, res) => {
       filas.forEach(f => { if (!f.cuota) f.cuota = r2(f.cuota_neta + f.iva); });
       nCuotas = filas.length;
       monto = monto || filas.reduce((a, f) => a + f.amortizacion, 0);
-      // derivar tasa de una cuota regular
       const reg = filas.find(f => f.interes > 0 && f.saldo > 0);
       if (reg && !tasa) { const prev = filas[filas.indexOf(reg) - 1]; const base = prev ? prev.saldo : monto; if (base > 0) tasa = r2(reg.interes / base * 100); }
     } else {
       filas = generarTabla({ monto, pie, tasa_mensual: tasa, n_cuotas: nCuotas, sistema: sis, fecha_inicio: b.fecha_inicio, iva_pct: ivaPct });
     }
-    const r = db.prepare(`INSERT INTO creditos (banco,nombre,monto,tasa_mensual,n_cuotas,sistema,fecha_inicio,cuenta_id,tipo,pie,iva_pct,glosa)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(b.banco, b.nombre || b.banco, monto, tasa, nCuotas, sis, b.fecha_inicio,
-      b.cuenta_id || null, tipo, pie, ivaPct, b.glosa || null);
+    const r = db.prepare(`INSERT INTO creditos (banco,nombre,monto,tasa_mensual,n_cuotas,sistema,fecha_inicio,cuenta_id,tipo,pie,iva_pct,glosa,empresa)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(b.banco, b.nombre || b.banco, monto, tasa, nCuotas, sis, b.fecha_inicio,
+      cuentaId, tipo, pie, ivaPct, b.glosa || null, empresa);
     const cid = r.lastInsertRowid;
-    const ins = db.prepare(`INSERT INTO credito_cuotas (credito_id,numero,fecha_venc,cuota,interes,amortizacion,saldo,iva,cuota_neta,pagado,fecha_pago)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
-    for (const f of filas) ins.run(cid, f.numero, f.fecha_venc, f.cuota, f.interes, f.amortizacion, f.saldo, f.iva || 0, f.cuota_neta || 0, f.pagado || 0, f.fecha_pago || null);
+    const ins = db.prepare(`INSERT INTO credito_cuotas (credito_id,numero,fecha_venc,cuota,interes,amortizacion,saldo,iva,cuota_neta,pagado,fecha_pago,empresa)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+    for (const f of filas) ins.run(cid, f.numero, f.fecha_venc, f.cuota, f.interes, f.amortizacion, f.saldo, f.iva || 0, f.cuota_neta || 0, f.pagado || 0, f.fecha_pago || null, empresa);
     return cid;
   });
   const id = tx();
@@ -119,25 +122,31 @@ router.post('/', (req, res) => {
 });
 
 router.get('/:id', (req, res) => {
-  const c = db.prepare('SELECT * FROM creditos WHERE id=?').get(req.params.id);
+  const c = db.prepare('SELECT * FROM creditos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
   if (!c) return res.status(404).json({ error: 'No existe' });
   c.cuotas = db.prepare('SELECT * FROM credito_cuotas WHERE credito_id=? ORDER BY numero').all(c.id);
   res.json(c);
 });
 
-router.delete('/:id', (req, res) => { db.prepare('DELETE FROM creditos WHERE id=?').run(req.params.id); res.json({ ok: true }); });
+router.delete('/:id', (req, res) => {
+  const c = db.prepare('SELECT id FROM creditos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!c) return res.status(404).json({ error: 'No existe' });
+  db.prepare('DELETE FROM creditos WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
 
 router.post('/:id/cuotas/:numero/pagar', (req, res) => {
-  const c = db.prepare('SELECT * FROM creditos WHERE id=?').get(req.params.id);
+  const c = db.prepare('SELECT * FROM creditos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!c) return res.status(404).json({ error: 'Credito no existe' });
   const cuota = db.prepare('SELECT * FROM credito_cuotas WHERE credito_id=? AND numero=?').get(req.params.id, req.params.numero);
   if (!cuota) return res.status(404).json({ error: 'Cuota no existe' });
   const fecha = req.body.fecha_pago || new Date().toISOString().slice(0, 10);
   const tx = db.transaction(() => {
     let movId = null;
     if (c.cuenta_id) {
-      const r = db.prepare(`INSERT INTO tes_movimientos (fecha,cuenta_id,tipo,categoria,monto,glosa,credito_cuota_id,usuario_id)
-        VALUES (?,?,?,?,?,?,?,?)`).run(fecha, c.cuenta_id, 'EGRESO', (c.tipo === 'LEASING' ? 'Leasing ' : 'Credito ') + c.banco, cuota.cuota,
-        'Cuota ' + cuota.numero + '/' + c.n_cuotas + ' ' + c.nombre, cuota.id, req.user.id);
+      const r = db.prepare(`INSERT INTO tes_movimientos (fecha,cuenta_id,tipo,categoria,monto,glosa,credito_cuota_id,usuario_id,empresa)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(fecha, c.cuenta_id, 'EGRESO', (c.tipo === 'LEASING' ? 'Leasing ' : 'Credito ') + c.banco, cuota.cuota,
+        'Cuota ' + cuota.numero + '/' + c.n_cuotas + ' ' + c.nombre, cuota.id, req.user.id, req.empresa);
       movId = r.lastInsertRowid;
     }
     db.prepare('UPDATE credito_cuotas SET pagado=1, fecha_pago=?, movimiento_id=? WHERE id=?').run(fecha, movId, cuota.id);
@@ -155,11 +164,16 @@ router.post('/tasa-desde-cuota', (req, res) => {
 });
 
 router.put('/:id', (req, res) => {
-  const b = req.body; const c = db.prepare('SELECT * FROM creditos WHERE id=?').get(req.params.id);
+  const b = req.body; const c = db.prepare('SELECT * FROM creditos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
   if (!c) return res.status(404).json({ error: 'No existe' });
-  db.prepare('UPDATE creditos SET banco=?, nombre=?, glosa=?, tipo=?, cuenta_id=?, estado=? WHERE id=?')
+  let cuentaId = (b.cuenta_id === '' ? null : (b.cuenta_id != null ? b.cuenta_id : c.cuenta_id));
+  if (cuentaId) {
+    const cta = db.prepare('SELECT id FROM cuentas_bancarias WHERE id=? AND empresa=?').get(cuentaId, req.empresa);
+    if (!cta) cuentaId = c.cuenta_id;
+  }
+  db.prepare('UPDATE creditos SET banco=?, nombre=?, glosa=?, tipo=?, cuenta_id=?, estado=? WHERE id=? AND empresa=?')
     .run(b.banco != null ? b.banco : c.banco, b.nombre != null ? b.nombre : c.nombre, b.glosa != null ? b.glosa : c.glosa,
-      b.tipo || c.tipo, (b.cuenta_id === '' ? null : (b.cuenta_id != null ? b.cuenta_id : c.cuenta_id)), b.estado || c.estado, req.params.id);
+      b.tipo || c.tipo, cuentaId, b.estado || c.estado, req.params.id, req.empresa);
   res.json(db.prepare('SELECT * FROM creditos WHERE id=?').get(req.params.id));
 });
 

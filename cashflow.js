@@ -22,7 +22,6 @@ function flujoPeriodo(fecha, gran) {
   }
   return { key: fecha.slice(0, 7), label: fecha.slice(0, 7) };
 }
-// eventos: [{fecha,tipo:'INGRESO'|'EGRESO',monto,actividad,clase:'REAL'|'PROY'}]
 function flujoConstruir(eventos, gran, saldoInicial, saldoMinimo) {
   const acts = ['OPERACIONAL', 'INVERSION', 'FINANCIAMIENTO'];
   const pm = {};
@@ -43,7 +42,7 @@ function flujoConstruir(eventos, gran, saldoInicial, saldoMinimo) {
   for (const p of periodos) {
     p.neto_real = p.real.ing - p.real.egr;
     p.neto_proy = p.proy.ing - p.proy.egr;
-    saldo += p.neto_proy;                 // proyeccion del saldo hacia adelante
+    saldo += p.neto_proy;
     p.saldo_acum = Math.round(saldo);
     p.deficit = saldo < saldoMinimo;
     if (p.deficit) alertas.push({ periodo: p.label, saldo: Math.round(saldo) });
@@ -57,8 +56,8 @@ function flujoConstruir(eventos, gran, saldoInicial, saldoMinimo) {
   };
 }
 
-function saldoActualBancos() {
-  const cuentas = db.prepare('SELECT * FROM cuentas_bancarias').all();
+function saldoActualBancos(empresa) {
+  const cuentas = db.prepare('SELECT * FROM cuentas_bancarias WHERE empresa=?').all(empresa);
   let total = 0;
   for (const c of cuentas) {
     const ing = db.prepare("SELECT COALESCE(SUM(monto),0) s FROM tes_movimientos WHERE cuenta_id=? AND tipo='INGRESO'").get(c.id).s;
@@ -68,61 +67,62 @@ function saldoActualBancos() {
   return total;
 }
 
-function flujoReporte(b) {
+function flujoReporte(b, empresa) {
   const gran = b.granularidad || 'mensual';
   const desde = b.desde || '0000-01-01', hasta = b.hasta || '9999-12-31';
   const minimo = Number(b.saldo_minimo) || 0;
   const excluir = new Set((b.excluir || []).map(String));
   const eventos = [];
-  db.prepare('SELECT * FROM tes_movimientos WHERE fecha>=? AND fecha<=?').all(desde, hasta).forEach(m =>
+  db.prepare('SELECT * FROM tes_movimientos WHERE empresa=? AND fecha>=? AND fecha<=?').all(empresa, desde, hasta).forEach(m =>
     eventos.push({ fecha: m.fecha, tipo: m.tipo, monto: m.monto, actividad: flujoInferActividad(m), clase: 'REAL' }));
-  db.prepare('SELECT * FROM flujo_proyeccion WHERE fecha>=? AND fecha<=?').all(desde, hasta).forEach(i => {
+  db.prepare('SELECT * FROM flujo_proyeccion WHERE empresa=? AND fecha>=? AND fecha<=?').all(empresa, desde, hasta).forEach(i => {
     if (excluir.has(String(i.id))) return;
     const monto = i.monto * ((i.probabilidad == null ? 100 : i.probabilidad) / 100);
     eventos.push({ fecha: i.fecha, tipo: i.tipo, monto, actividad: i.actividad, clase: 'PROY' });
   });
-  db.prepare('SELECT * FROM credito_cuotas WHERE pagado=0 AND fecha_venc>=? AND fecha_venc<=?').all(desde, hasta).forEach(q =>
+  db.prepare('SELECT * FROM credito_cuotas WHERE empresa=? AND pagado=0 AND fecha_venc>=? AND fecha_venc<=?').all(empresa, desde, hasta).forEach(q =>
     eventos.push({ fecha: q.fecha_venc, tipo: 'EGRESO', monto: q.cuota, actividad: 'FINANCIAMIENTO', clase: 'PROY' }));
-  return flujoConstruir(eventos, gran, saldoActualBancos(), minimo);
+  return flujoConstruir(eventos, gran, saldoActualBancos(empresa), minimo);
 }
 
-
-function flujoEventos(b) {
+function flujoEventos(b, empresa) {
   const desde = b.desde || '0000-01-01', hasta = b.hasta || '9999-12-31';
   const excluir = new Set((b.excluir || []).map(String));
   const ev = [];
-  db.prepare('SELECT * FROM tes_movimientos WHERE fecha>=? AND fecha<=?').all(desde, hasta).forEach(m =>
+  db.prepare('SELECT * FROM tes_movimientos WHERE empresa=? AND fecha>=? AND fecha<=?').all(empresa, desde, hasta).forEach(m =>
     ev.push({ fecha: m.fecha, tipo: m.tipo, monto: m.monto, actividad: flujoInferActividad(m), categoria: m.categoria || '', glosa: m.glosa || '', clase: 'REAL' }));
-  db.prepare('SELECT * FROM flujo_proyeccion WHERE fecha>=? AND fecha<=?').all(desde, hasta).forEach(i => {
+  db.prepare('SELECT * FROM flujo_proyeccion WHERE empresa=? AND fecha>=? AND fecha<=?').all(empresa, desde, hasta).forEach(i => {
     if (excluir.has(String(i.id))) return;
     const monto = i.monto * ((i.probabilidad == null ? 100 : i.probabilidad) / 100);
     ev.push({ fecha: i.fecha, tipo: i.tipo, monto, actividad: i.actividad, categoria: i.categoria || '', glosa: i.descripcion || '', clase: 'PROY' });
   });
-  db.prepare('SELECT * FROM credito_cuotas WHERE pagado=0 AND fecha_venc>=? AND fecha_venc<=?').all(desde, hasta).forEach(q =>
+  db.prepare('SELECT * FROM credito_cuotas WHERE empresa=? AND pagado=0 AND fecha_venc>=? AND fecha_venc<=?').all(empresa, desde, hasta).forEach(q =>
     ev.push({ fecha: q.fecha_venc, tipo: 'EGRESO', monto: q.cuota, actividad: 'FINANCIAMIENTO', categoria: 'Cuota crédito', glosa: '', clase: 'PROY' }));
-  return { saldoInicial: saldoActualBancos(), eventos: ev };
+  return { saldoInicial: saldoActualBancos(empresa), eventos: ev };
 }
 
 // ---- Endpoints ----
 router.get('/proyeccion', (req, res) => {
-  res.json(db.prepare('SELECT * FROM flujo_proyeccion ORDER BY fecha').all());
+  res.json(db.prepare('SELECT * FROM flujo_proyeccion WHERE empresa=? ORDER BY fecha').all(req.empresa));
 });
 router.post('/proyeccion', (req, res) => {
   const b = req.body;
   if (!b.fecha || !b.tipo || !b.monto) return res.status(400).json({ error: 'fecha, tipo y monto requeridos' });
-  const r = db.prepare(`INSERT INTO flujo_proyeccion (fecha,tipo,actividad,categoria,descripcion,monto,probabilidad,cliente,extra_contable)
-    VALUES (?,?,?,?,?,?,?,?,?)`).run(b.fecha, b.tipo, b.actividad || 'OPERACIONAL', b.categoria || null, b.descripcion || null,
-    Math.abs(Number(b.monto)) || 0, b.probabilidad == null ? 100 : Number(b.probabilidad), b.cliente || null, b.extra_contable ? 1 : 0);
+  const r = db.prepare(`INSERT INTO flujo_proyeccion (fecha,tipo,actividad,categoria,descripcion,monto,probabilidad,cliente,extra_contable,empresa)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(b.fecha, b.tipo, b.actividad || 'OPERACIONAL', b.categoria || null, b.descripcion || null,
+    Math.abs(Number(b.monto)) || 0, b.probabilidad == null ? 100 : Number(b.probabilidad), b.cliente || null, b.extra_contable ? 1 : 0, req.empresa);
   res.json(db.prepare('SELECT * FROM flujo_proyeccion WHERE id=?').get(r.lastInsertRowid));
 });
 router.delete('/proyeccion/:id', (req, res) => {
-  db.prepare('DELETE FROM flujo_proyeccion WHERE id=?').run(req.params.id);
+  const r = db.prepare('SELECT id FROM flujo_proyeccion WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!r) return res.status(404).json({ error: 'No existe' });
+  db.prepare('DELETE FROM flujo_proyeccion WHERE id=? AND empresa=?').run(req.params.id, req.empresa);
   res.json({ ok: true });
 });
-router.post('/reporte', (req, res) => res.json(flujoReporte(req.body || {})));
-router.post('/eventos', (req, res) => res.json(flujoEventos(req.body || {})));
+router.post('/reporte', (req, res) => res.json(flujoReporte(req.body || {}, req.empresa)));
+router.post('/eventos', (req, res) => res.json(flujoEventos(req.body || {}, req.empresa)));
 router.get('/whatif', (req, res) => {
-  res.json(db.prepare("SELECT * FROM flujo_proyeccion WHERE tipo='INGRESO' ORDER BY fecha").all());
+  res.json(db.prepare("SELECT * FROM flujo_proyeccion WHERE empresa=? AND tipo='INGRESO' ORDER BY fecha").all(req.empresa));
 });
 
 module.exports = router;

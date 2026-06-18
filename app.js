@@ -9,9 +9,16 @@ const fdate = (s) => s ? s.slice(0, 10) : '';
 const hoy = () => new Date().toISOString().slice(0, 10);
 const esc = (s) => (s == null ? '' : String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
 
+function activeEmpresa() {
+  // Empresa activa para aislar datos. Usuarios con empresa fija usan la suya;
+  // los de acceso a ambas (Adrian) usan la seleccionada en el switch.
+  if (USER && USER.empresa) return USER.empresa;
+  try { return (typeof currentBrand !== 'undefined' && currentBrand) ? currentBrand.id : (localStorage.getItem('erp_empresa') || 'jmc'); } catch { return 'jmc'; }
+}
 async function api(method, path, body) {
   const opt = { method, headers: {} };
   if (TOKEN) opt.headers['Authorization'] = 'Bearer ' + TOKEN;
+  opt.headers['X-Empresa'] = activeEmpresa();
   if (body) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
   const r = await fetch('/api' + path, opt);
   const data = await r.json().catch(() => ({}));
@@ -38,7 +45,7 @@ async function doLogin(e) {
     if (USER.rol !== 'admin') $('#navUsuarios').style.display = 'none';
     if (USER.empresa && BRANDS[USER.empresa]) selectEmpresa(USER.empresa);
     const _sw = document.getElementById('empresaSwitch');
-    if (_sw) _sw.style.display = (USER.rol === 'admin' || !USER.empresa) ? '' : 'none';
+    if (_sw) _sw.style.display = (!USER.empresa) ? '' : 'none';
     go('dashboard');
   } catch (err) { $('#liErr').textContent = err.message; }
 }
@@ -736,7 +743,10 @@ function renderEmpresaSwitch() {
   const s = document.getElementById('empresaSwitch'); if (!s) return;
   s.innerHTML = Object.values(BRANDS).map(b => `<option value="${b.id}">${b.nombre}</option>`).join('');
   s.value = currentBrand.id;
-  s.onchange = () => selectEmpresa(s.value);
+  s.onchange = () => {
+    selectEmpresa(s.value);
+    if (TOKEN) { const a = document.querySelector('#nav a.active'); go(a ? a.dataset.v : 'dashboard'); }
+  };
 }
 // Inicializar branding
 applyBrand(loadBrand());
