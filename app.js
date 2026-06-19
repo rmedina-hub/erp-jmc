@@ -52,11 +52,11 @@ async function doLogin(e) {
 function logout() { TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', usuarios: 'Usuarios', auditoria: 'Auditoria' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', usuarios: 'Usuarios', auditoria: 'Auditoria' };
 function go(v) {
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, usuarios: vUsuarios, auditoria: vAuditoria }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, usuarios: vUsuarios, auditoria: vAuditoria }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
 
@@ -200,20 +200,25 @@ function renderTesTabs() {
 }
 async function tesCuentas() {
   const cu = await api('GET', '/tesoreria/cuentas');
+  window._cuentas = cu;
   $('#tesBody').innerHTML = `<div class="card"><h3>Cuentas bancarias <button class="btn" onclick="formCuenta()">+ Nueva cuenta</button></h3>
-    <div class="scroll"><table><tr><th>Banco</th><th>Cuenta</th><th>N°</th><th>Moneda</th><th class="num">Saldo inicial</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Saldo actual</th></tr>
-    ${cu.length ? cu.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}</td><td>${esc(c.numero||'')}</td><td>${c.moneda}</td><td class="num">${clp(c.saldo_inicial)}</td><td class="num">${clp(c.total_ingresos)}</td><td class="num">${clp(c.total_egresos)}</td><td class="num"><b>${clp(c.saldo_actual)}</b></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Sin cuentas</td></tr>'}</table></div></div>`;
+    <div class="scroll"><table><tr><th>Banco</th><th>Cuenta</th><th>N°</th><th>Moneda</th><th class="num">Saldo inicial</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Saldo actual</th><th></th></tr>
+    ${cu.length ? cu.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}</td><td>${esc(c.numero||'')}</td><td>${c.moneda}</td><td class="num">${clp(c.saldo_inicial)}</td><td class="num">${clp(c.total_ingresos)}</td><td class="num">${clp(c.total_egresos)}</td><td class="num"><b>${clp(c.saldo_actual)}</b></td><td><button class="btn sm ghost" onclick="editarCuenta(${c.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin cuentas</td></tr>'}</table></div></div>`;
 }
-function formCuenta() {
-  modal(`<h3>Nueva cuenta bancaria</h3>
-    <div class="row"><div class="field"><label>Banco</label><input id="cBanco"></div><div class="field"><label>Nombre</label><input id="cNom" placeholder="Cuenta corriente"></div></div>
-    <div class="row"><div class="field"><label>Numero</label><input id="cNum"></div><div class="field"><label>Moneda</label><input id="cMon" value="CLP"></div></div>
-    <div class="row"><div class="field"><label>Saldo inicial</label><input id="cSaldo" type="number" value="0"></div></div><div class="err" id="cErr"></div>
-    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarCuenta()">Guardar</button></div>`);
+function editarCuenta(id) { formCuenta((window._cuentas || []).find(x => x.id === id)); }
+function formCuenta(c) {
+  modal(`<h3>${c ? 'Editar cuenta bancaria' : 'Nueva cuenta bancaria'}</h3>
+    <div class="row"><div class="field"><label>Banco</label><input id="cBanco" value="${c ? esc(c.banco) : ''}"></div><div class="field"><label>Nombre</label><input id="cNom" value="${c ? esc(c.nombre) : ''}" placeholder="Cuenta corriente"></div></div>
+    <div class="row"><div class="field"><label>Numero</label><input id="cNum" value="${c ? esc(c.numero || '') : ''}"></div><div class="field"><label>Moneda</label><input id="cMon" value="${c ? esc(c.moneda) : 'CLP'}"></div></div>
+    <div class="row"><div class="field"><label>Saldo inicial</label><input id="cSaldo" type="number" value="${c ? c.saldo_inicial : 0}"></div></div><div class="err" id="cErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarCuenta(${c ? c.id : 0})">Guardar</button></div>`);
 }
-async function guardarCuenta() {
-  try { await api('POST', '/tesoreria/cuentas', { banco: val('cBanco'), nombre: val('cNom'), numero: val('cNum'), moneda: val('cMon'), saldo_inicial: val('cSaldo') }); closeModal(); tesCuentas(); }
-  catch (e) { $('#cErr').textContent = e.message; }
+async function guardarCuenta(id) {
+  try {
+    const body = { banco: val('cBanco'), nombre: val('cNom'), numero: val('cNum'), moneda: val('cMon'), saldo_inicial: val('cSaldo') };
+    if (id) await api('PUT', '/tesoreria/cuentas/' + id, body); else await api('POST', '/tesoreria/cuentas', body);
+    closeModal(); tesCuentas();
+  } catch (e) { $('#cErr').textContent = e.message; }
 }
 async function cuentaSelect(id, onchange) {
   const cu = await api('GET', '/tesoreria/cuentas');
@@ -269,7 +274,7 @@ function leerCSV() {
 async function importarCartola() {
   try {
     const d = await api('POST', '/tesoreria/cartola/import', { cuenta_id: val('caCuenta'), csv: val('caTxt') });
-    $('#caRes').innerHTML = `<div class="card" style="margin-top:14px"><b>${d.importadas}</b> lineas importadas (lote ${d.lote}). Ve a la pestana <b>Conciliacion</b>.</div>`;
+    $('#caRes').innerHTML = `<div class="card" style="margin-top:14px"><b>${d.importadas}</b> lineas importadas${d.omitidas ? `, <b>${d.omitidas}</b> omitidas por estar duplicadas` : ''} (lote ${d.lote}). Ve a la pestana <b>Conciliacion</b>.</div>`;
   } catch (e) { $('#caErr').textContent = e.message; }
 }
 async function tesConcil() {
@@ -510,11 +515,11 @@ async function renderSub(t, id) {
   } else if (t === 'seg') {
     $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Compania</label><input id="sgC"></div><div class="field"><label>Poliza</label><input id="sgP"></div></div>
       <div class="row"><div class="field"><label>Inicio</label><input id="sgI" type="date"></div><div class="field"><label>Vencimiento</label><input id="sgV" type="date"></div><div class="field"><label>Prima</label><input id="sgPr" type="number"></div><button class="btn" onclick="addSeguro(${id})">+ Agregar</button></div>
-      <table style="margin-top:12px"><tr><th>Compania</th><th>Poliza</th><th>Vence</th><th class="num">Prima</th><th></th></tr>${a.seguros.length ? a.seguros.map(s => `<tr><td>${esc(s.compania||'')}</td><td>${esc(s.poliza||'')}</td><td>${fdate(s.fecha_vencimiento)} ${venceBadge(s.fecha_vencimiento)}</td><td class="num">${clp(s.prima)}</td><td><button class="btn sm red" onclick="delSub('seguros',${s.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin seguros</td></tr>'}</table>`;
+      <table style="margin-top:12px"><tr><th>Compania</th><th>Poliza</th><th>Vence</th><th class="num">Prima</th><th>PDF</th><th></th></tr>${a.seguros.length ? a.seguros.map(s => `<tr><td>${esc(s.compania||'')}</td><td>${esc(s.poliza||'')}</td><td>${fdate(s.fecha_vencimiento)} ${venceBadge(s.fecha_vencimiento)}</td><td class="num">${clp(s.prima)}</td><td>${pdfCell('seguros',s,id)}</td><td><button class="btn sm red" onclick="delSub('seguros',${s.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin seguros</td></tr>'}</table>`;
   } else {
     $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Tipo</label><select id="dcT"><option>PERMISO_CIRCULACION</option><option>REVISION_TECNICA</option><option>SEGURO_OBLIGATORIO</option><option>PADRON</option><option>OTRO</option></select></div><div class="field"><label>Numero</label><input id="dcN"></div></div>
       <div class="row"><div class="field"><label>Emision</label><input id="dcE" type="date"></div><div class="field"><label>Vencimiento</label><input id="dcV" type="date"></div><button class="btn" onclick="addDoc(${id})">+ Agregar</button></div>
-      <table style="margin-top:12px"><tr><th>Tipo</th><th>Numero</th><th>Vence</th><th></th></tr>${a.documentos.length ? a.documentos.map(d => `<tr><td>${esc(d.tipo)}</td><td>${esc(d.numero||'')}</td><td>${fdate(d.fecha_vencimiento)} ${venceBadge(d.fecha_vencimiento)}</td><td><button class="btn sm red" onclick="delSub('documentos',${d.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="4" class="empty">Sin documentos</td></tr>'}</table>`;
+      <table style="margin-top:12px"><tr><th>Tipo</th><th>Numero</th><th>Vence</th><th>PDF</th><th></th></tr>${a.documentos.length ? a.documentos.map(d => `<tr><td>${esc(d.tipo)}</td><td>${esc(d.numero||'')}</td><td>${fdate(d.fecha_vencimiento)} ${venceBadge(d.fecha_vencimiento)}</td><td>${pdfCell('documentos',d,id)}</td><td><button class="btn sm red" onclick="delSub('documentos',${d.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin documentos</td></tr>'}</table>`;
   }
 }
 function venceBadge(f) {
@@ -528,6 +533,30 @@ async function addSeguro(id) { await api('POST', `/activos/${id}/seguros`, { com
 async function addDoc(id) { await api('POST', `/activos/${id}/documentos`, { tipo: val('dcT'), numero: val('dcN'), fecha_emision: val('dcE'), fecha_vencimiento: val('dcV') }); verActivo(id); }
 async function delSub(tipo, sid, aid) { await api('DELETE', `/activos/${tipo}/${sid}`); verActivo(aid); }
 async function delActivo(id) { if (confirm('Eliminar activo y su historial?')) { await api('DELETE', '/activos/' + id); closeModal(); actLista(); } }
+function pdfCell(tipo, x, aid) {
+  const ver = x.archivo ? `<a href="#" onclick="descArch('${tipo}',${x.id});return false" style="margin-right:8px">ver PDF</a>` : '';
+  return `${ver}<label class="btn sm ghost" style="cursor:pointer;margin:0">${x.archivo ? 'cambiar' : 'subir PDF'}<input type="file" accept="application/pdf" style="display:none" onchange="subirArch('${tipo}',${x.id},${aid},this)"></label>`;
+}
+async function descArch(tipo, id) {
+  try {
+    const r = await fetch('/api/activos/' + tipo + '/' + id + '/archivo', { headers: { Authorization: 'Bearer ' + TOKEN, 'X-Empresa': activeEmpresa() } });
+    if (!r.ok) { alert('No se pudo abrir el PDF.'); return; }
+    const b = await r.blob(); const url = URL.createObjectURL(b); window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { alert('Error al abrir el PDF: ' + e.message); }
+}
+async function subirArch(tipo, id, aid, input) {
+  const file = input.files[0]; if (!file) return;
+  if (file.size > 12 * 1024 * 1024) { alert('El archivo supera 12MB.'); return; }
+  const rd = new FileReader();
+  rd.onload = async () => {
+    try {
+      await api('POST', '/activos/' + tipo + '/' + id + '/archivo', { nombre: file.name, mime: file.type || 'application/pdf', base64: String(rd.result).split(',')[1] });
+      verActivo(aid);
+    } catch (e) { alert('Error al subir: ' + e.message); }
+  };
+  rd.readAsDataURL(file);
+}
 async function actAlertas() {
   const al = await api('GET', '/activos/alertas/vencimientos?dias=60');
   $('#actBody').innerHTML = `<div class="card"><h3>Vencimientos proximos (60 dias) y vencidos</h3>
@@ -678,6 +707,60 @@ async function simularEscenario() {
   </div>
   ${escn.alertas.length ? `<div class="card" style="border-left:4px solid var(--rojo);background:#fdeded"><b style="color:var(--rojo)">⚠ En este escenario hay deficit</b> en: ${escn.alertas.map(a => a.periodo + ' (' + clp(a.saldo) + ')').join(', ')}. Considera renegociar plazos o asegurar la cobranza.</div>` : `<div class="card" style="border-left:4px solid var(--verde);background:#eafaf0"><b style="color:var(--verde)">El flujo resiste este escenario</b> sin caer bajo el minimo.</div>`}`;
 }
+
+// ===================== CUENTAS POR COBRAR / PAGAR =====================
+let facTipo = 'COBRAR';
+async function vFacturas() {
+  C().innerHTML = `<div class="tabs">
+    <button data-ft="COBRAR">Por cobrar (clientes)</button>
+    <button data-ft="PAGAR">Por pagar (proveedores)</button></div><div id="facBody"></div>`;
+  C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { facTipo = b.dataset.ft; renderFac(); }));
+  renderFac();
+}
+function renderFac() {
+  C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.ft === facTipo));
+  facLista();
+}
+async function facLista() {
+  const d = await api('GET', '/facturas?tipo=' + facTipo);
+  window._facturas = d.items;
+  const esCobrar = facTipo === 'COBRAR';
+  const pend = esCobrar ? d.resumen.cobrar_pend : d.resumen.pagar_pend;
+  $('#facBody').innerHTML = `<div class="card">
+    <h3>${esCobrar ? 'Cuentas por cobrar' : 'Cuentas por pagar'} <button class="btn" onclick="formFactura()">+ Nueva factura ${esCobrar ? 'por cobrar' : 'por pagar'}</button></h3>
+    <p class="muted">Pendiente total: <b>${clp(pend)}</b>. Las facturas pendientes se proyectan automaticamente en el <b>Flujo de caja</b> segun su fecha de vencimiento.</p>
+    <div class="scroll"><table><tr><th>${esCobrar ? 'Cliente' : 'Proveedor'}</th><th>RUT</th><th>N&deg; Factura</th><th>Emision</th><th>Vence</th><th class="num">Monto</th><th>Estado</th><th></th></tr>
+    ${d.items.length ? d.items.map(f => `<tr><td>${esc(f.contraparte || '')}</td><td>${esc(f.rut || '')}</td><td>${esc(f.numero || '')}</td><td>${fdate(f.fecha_emision)}</td><td>${fdate(f.fecha_vencimiento)} ${f.estado === 'PENDIENTE' ? venceBadge(f.fecha_vencimiento) : ''}</td><td class="num">${clp(f.monto)}</td><td>${f.estado === 'PAGADA' ? `<span class="pill ok">${esCobrar ? 'COBRADA' : 'PAGADA'}</span>` : '<span class="pill warn">PENDIENTE</span>'}</td>
+      <td>${f.estado === 'PENDIENTE' ? `<button class="btn sm green" onclick="pagarFactura(${f.id})">${esCobrar ? 'Cobrar' : 'Pagar'}</button> <button class="btn sm ghost" onclick="formFactura(${f.id})">Editar</button> ` : ''}<button class="btn sm red" onclick="delFactura(${f.id})">x</button></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Sin registros</td></tr>'}</table></div></div>`;
+}
+function formFactura(id) {
+  const f = id ? (window._facturas || []).find(x => x.id === id) : null;
+  const esCobrar = facTipo === 'COBRAR';
+  modal(`<h3>${id ? 'Editar' : 'Nueva'} factura ${esCobrar ? 'por cobrar' : 'por pagar'}</h3>
+    <div class="row"><div class="field"><label>${esCobrar ? 'Cliente' : 'Proveedor'}</label><input id="faC" value="${f ? esc(f.contraparte || '') : ''}"></div><div class="field"><label>RUT</label><input id="faR" value="${f ? esc(f.rut || '') : ''}"></div></div>
+    <div class="row"><div class="field"><label>N&deg; Factura</label><input id="faN" value="${f ? esc(f.numero || '') : ''}"></div><div class="field"><label>Monto</label><input id="faM" type="number" value="${f ? f.monto : ''}"></div></div>
+    <div class="row"><div class="field"><label>Fecha emision</label><input id="faE" type="date" value="${f && f.fecha_emision ? fdate(f.fecha_emision) : ''}"></div><div class="field"><label>Fecha vencimiento</label><input id="faV" type="date" value="${f && f.fecha_vencimiento ? fdate(f.fecha_vencimiento) : ''}"></div></div>
+    <div class="row"><div class="field"><label>Glosa / detalle</label><input id="faG" value="${f ? esc(f.glosa || '') : ''}"></div></div>
+    <div class="err" id="faErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarFactura(${id || 0})">Guardar</button></div>`);
+}
+async function guardarFactura(id) {
+  const body = { tipo: facTipo, contraparte: val('faC'), rut: val('faR'), numero: val('faN'), monto: val('faM'), fecha_emision: val('faE'), fecha_vencimiento: val('faV'), glosa: val('faG') };
+  if (!body.fecha_vencimiento || !body.monto) { $('#faErr').textContent = 'Fecha de vencimiento y monto son obligatorios.'; return; }
+  try { if (id) await api('PUT', '/facturas/' + id, body); else await api('POST', '/facturas', body); closeModal(); facLista(); }
+  catch (e) { $('#faErr').textContent = e.message; }
+}
+async function pagarFactura(id) {
+  const cu = await api('GET', '/tesoreria/cuentas');
+  const esCobrar = facTipo === 'COBRAR';
+  modal(`<h3>${esCobrar ? 'Registrar cobro' : 'Registrar pago'}</h3>
+    <p class="muted">Si eliges una cuenta, se genera el movimiento en Tesoreria automaticamente (opcional).</p>
+    <div class="row"><div class="field"><label>Fecha</label><input id="pgF" type="date" value="${hoy()}"></div>
+      <div class="field"><label>Cuenta (opcional)</label><select id="pgC"><option value="">-- sin movimiento --</option>${cu.map(c => `<option value="${c.id}">${esc(c.banco)} - ${esc(c.nombre)}</option>`).join('')}</select></div></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn green" onclick="doPagarFactura(${id})">Confirmar</button></div>`);
+}
+async function doPagarFactura(id) { await api('POST', '/facturas/' + id + '/pagar', { fecha_pago: val('pgF'), cuenta_id: val('pgC') || null }); closeModal(); facLista(); }
+async function delFactura(id) { if (confirm('Eliminar esta factura?')) { await api('DELETE', '/facturas/' + id); facLista(); } }
 
 // ===================== AUDITORIA (historial) =====================
 const AUDIT_MODS = ['Sesion', 'Inventario', 'Tesoreria', 'Creditos', 'Activos', 'Flujo', 'Usuarios'];

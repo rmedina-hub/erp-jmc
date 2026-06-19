@@ -46,6 +46,9 @@ router.get('/:id', (req, res) => {
   a.kilometrajes = db.prepare('SELECT * FROM activo_kilometrajes WHERE activo_id=? ORDER BY fecha DESC, id DESC').all(a.id);
   a.seguros = db.prepare('SELECT * FROM activo_seguros WHERE activo_id=? ORDER BY fecha_vencimiento').all(a.id);
   a.documentos = db.prepare('SELECT * FROM activo_documentos WHERE activo_id=? ORDER BY fecha_vencimiento').all(a.id);
+  const tieneArch = db.prepare("SELECT nombre FROM archivos WHERE entidad=? AND entidad_id=? LIMIT 1");
+  a.seguros.forEach(x => { const ar = tieneArch.get('seguro', x.id); x.archivo = ar ? ar.nombre : null; });
+  a.documentos.forEach(x => { const ar = tieneArch.get('documento', x.id); x.archivo = ar ? ar.nombre : null; });
   res.json(a);
 });
 router.delete('/:id', (req, res) => {
@@ -98,6 +101,39 @@ router.delete('/documentos/:did', (req, res) => {
   if (!d) return res.status(404).json({ error: 'No existe' });
   db.prepare('DELETE FROM activo_documentos WHERE id=?').run(req.params.did); res.json({ ok: true });
 });
+
+// ---------- Adjuntos PDF (seguros / documentos) ----------
+function guardarArchivo(req, res, entidad, fila) {
+  if (!fila) return res.status(404).json({ error: 'Registro no existe' });
+  const { nombre, mime, base64 } = req.body;
+  if (!base64) return res.status(400).json({ error: 'archivo requerido' });
+  let buf;
+  try { buf = Buffer.from(String(base64).replace(/^data:[^,]*,/, ''), 'base64'); }
+  catch (e) { return res.status(400).json({ error: 'archivo invalido' }); }
+  if (buf.length > 12 * 1024 * 1024) return res.status(400).json({ error: 'archivo demasiado grande (max 12MB)' });
+  db.prepare('DELETE FROM archivos WHERE entidad=? AND entidad_id=?').run(entidad, fila.id);
+  db.prepare('INSERT INTO archivos (empresa,entidad,entidad_id,nombre,mime,contenido) VALUES (?,?,?,?,?,?)')
+    .run(req.empresa, entidad, fila.id, nombre || (entidad + '.pdf'), mime || 'application/pdf', buf);
+  audit(req, 'Activos', 'Adjuntar PDF', entidad + ' #' + fila.id + ' (' + (nombre || '') + ')');
+  res.json({ ok: true });
+}
+function descargarArchivo(req, res, entidad, fila) {
+  if (!fila) return res.status(404).json({ error: 'Registro no existe' });
+  const ar = db.prepare('SELECT * FROM archivos WHERE entidad=? AND entidad_id=? ORDER BY id DESC LIMIT 1').get(entidad, fila.id);
+  if (!ar) return res.status(404).json({ error: 'Sin archivo' });
+  res.setHeader('Content-Type', ar.mime || 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline; filename="' + (ar.nombre || 'archivo.pdf').replace(/[^\w.\-]/g, '_') + '"');
+  res.send(Buffer.from(ar.contenido));
+}
+
+router.post('/seguros/:sid/archivo', (req, res) =>
+  guardarArchivo(req, res, 'seguro', db.prepare('SELECT * FROM activo_seguros WHERE id=? AND empresa=?').get(req.params.sid, req.empresa)));
+router.get('/seguros/:sid/archivo', (req, res) =>
+  descargarArchivo(req, res, 'seguro', db.prepare('SELECT * FROM activo_seguros WHERE id=? AND empresa=?').get(req.params.sid, req.empresa)));
+router.post('/documentos/:did/archivo', (req, res) =>
+  guardarArchivo(req, res, 'documento', db.prepare('SELECT * FROM activo_documentos WHERE id=? AND empresa=?').get(req.params.did, req.empresa)));
+router.get('/documentos/:did/archivo', (req, res) =>
+  descargarArchivo(req, res, 'documento', db.prepare('SELECT * FROM activo_documentos WHERE id=? AND empresa=?').get(req.params.did, req.empresa)));
 
 // ---------- Alertas de vencimientos ----------
 router.get('/alertas/vencimientos', (req, res) => {

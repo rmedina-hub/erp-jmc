@@ -83,6 +83,9 @@ function flujoReporte(b, empresa) {
   });
   db.prepare('SELECT * FROM credito_cuotas WHERE empresa=? AND pagado=0 AND fecha_venc>=? AND fecha_venc<=?').all(empresa, desde, hasta).forEach(q =>
     eventos.push({ fecha: q.fecha_venc, tipo: 'EGRESO', monto: q.cuota, actividad: 'FINANCIAMIENTO', clase: 'PROY' }));
+  // Cuentas por cobrar / por pagar pendientes -> flujo proyectado
+  db.prepare("SELECT * FROM facturas WHERE empresa=? AND estado='PENDIENTE' AND fecha_vencimiento>=? AND fecha_vencimiento<=?").all(empresa, desde, hasta).forEach(fa =>
+    eventos.push({ fecha: fa.fecha_vencimiento, tipo: fa.tipo === 'COBRAR' ? 'INGRESO' : 'EGRESO', monto: fa.monto, actividad: 'OPERACIONAL', clase: 'PROY' }));
   return flujoConstruir(eventos, gran, saldoActualBancos(empresa), minimo);
 }
 
@@ -99,6 +102,8 @@ function flujoEventos(b, empresa) {
   });
   db.prepare('SELECT * FROM credito_cuotas WHERE empresa=? AND pagado=0 AND fecha_venc>=? AND fecha_venc<=?').all(empresa, desde, hasta).forEach(q =>
     ev.push({ fecha: q.fecha_venc, tipo: 'EGRESO', monto: q.cuota, actividad: 'FINANCIAMIENTO', categoria: 'Cuota crédito', glosa: '', clase: 'PROY' }));
+  db.prepare("SELECT * FROM facturas WHERE empresa=? AND estado='PENDIENTE' AND fecha_vencimiento>=? AND fecha_vencimiento<=?").all(empresa, desde, hasta).forEach(fa =>
+    ev.push({ fecha: fa.fecha_vencimiento, tipo: fa.tipo === 'COBRAR' ? 'INGRESO' : 'EGRESO', monto: fa.monto, actividad: 'OPERACIONAL', categoria: fa.tipo === 'COBRAR' ? 'Cobro cliente (CxC)' : 'Pago proveedor (CxP)', glosa: (fa.contraparte || '') + (fa.numero ? ' Fac ' + fa.numero : ''), clase: 'PROY' }));
   return { saldoInicial: saldoActualBancos(empresa), eventos: ev };
 }
 

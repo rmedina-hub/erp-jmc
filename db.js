@@ -94,6 +94,17 @@ CREATE TABLE IF NOT EXISTS flujo_proyeccion (
   monto REAL NOT NULL DEFAULT 0, probabilidad REAL NOT NULL DEFAULT 100, cliente TEXT,
   extra_contable INTEGER NOT NULL DEFAULT 0, empresa TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
 
+CREATE TABLE IF NOT EXISTS facturas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, tipo TEXT NOT NULL DEFAULT 'COBRAR',
+  contraparte TEXT, rut TEXT, numero TEXT, glosa TEXT,
+  fecha_emision TEXT, fecha_vencimiento TEXT NOT NULL, monto REAL NOT NULL DEFAULT 0,
+  estado TEXT NOT NULL DEFAULT 'PENDIENTE', fecha_pago TEXT, cuenta_id INTEGER, movimiento_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS archivos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, entidad TEXT NOT NULL, entidad_id INTEGER NOT NULL,
+  nombre TEXT, mime TEXT, contenido BLOB, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
 CREATE TABLE IF NOT EXISTS auditoria (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT (datetime('now')),
   usuario_id INTEGER, usuario_nombre TEXT, usuario_email TEXT, rol TEXT, empresa TEXT,
@@ -129,6 +140,8 @@ const ADD_COLS = [
 ];
 for (const sql of ADD_COLS) { try { db.exec(sql); } catch (e) {} }
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_auditoria_emp_ts ON auditoria(empresa, ts)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_facturas_emp ON facturas(empresa, estado, fecha_vencimiento)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_archivos_ent ON archivos(entidad, entidad_id)'); } catch (e) {}
 
 // ---- Backfill: todos los datos preexistentes (empresa NULL) pasan a JMC ----
 const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancarias', 'tes_movimientos',

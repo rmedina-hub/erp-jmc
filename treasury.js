@@ -29,6 +29,17 @@ router.post('/cuentas', (req, res) => {
   audit(req, 'Tesoreria', 'Crear cuenta', banco + ' - ' + nombre);
   res.json(db.prepare('SELECT * FROM cuentas_bancarias WHERE id=?').get(r.lastInsertRowid));
 });
+router.put('/cuentas/:id', (req, res) => {
+  const b = req.body;
+  const c = cuentaDeEmpresa(req.params.id, req.empresa);
+  if (!c) return res.status(404).json({ error: 'No existe' });
+  db.prepare('UPDATE cuentas_bancarias SET banco=?, nombre=?, numero=?, moneda=?, saldo_inicial=? WHERE id=? AND empresa=?')
+    .run(b.banco != null ? b.banco : c.banco, b.nombre != null ? b.nombre : c.nombre,
+      b.numero != null ? b.numero : c.numero, b.moneda || c.moneda,
+      b.saldo_inicial != null ? Number(b.saldo_inicial) : c.saldo_inicial, req.params.id, req.empresa);
+  audit(req, 'Tesoreria', 'Editar cuenta / saldo inicial', (b.banco != null ? b.banco : c.banco) + ' - saldo ' + (b.saldo_inicial != null ? Number(b.saldo_inicial) : c.saldo_inicial));
+  res.json(db.prepare('SELECT * FROM cuentas_bancarias WHERE id=?').get(req.params.id));
+});
 
 // ---------- Movimientos (ingresos / egresos) ----------
 router.get('/movimientos', (req, res) => {
@@ -106,12 +117,21 @@ router.post('/cartola/import', (req, res) => {
   if (!Array.isArray(lineas) || !lineas.length) return res.status(400).json({ error: 'No se reconocieron lineas en la cartola' });
   const lote = 'IMP-' + Date.now();
   const ins = db.prepare(`INSERT INTO cartola_lineas (cuenta_id,fecha,descripcion,cargo,abono,saldo,lote_importacion,empresa) VALUES (?,?,?,?,?,?,?,?)`);
+  // Evita duplicados: no reinserta una linea identica ya existente para la misma cuenta
+  const existe = db.prepare(`SELECT 1 FROM cartola_lineas WHERE empresa=? AND cuenta_id=? AND IFNULL(fecha,'')=? AND IFNULL(descripcion,'')=? AND cargo=? AND abono=?`);
+  let importadas = 0, omitidas = 0;
   const tx = db.transaction((arr) => {
-    for (const l of arr) ins.run(cuenta_id, l.fecha || null, l.descripcion || null, Number(l.cargo) || 0, Number(l.abono) || 0, l.saldo == null ? null : Number(l.saldo), lote, req.empresa);
+    for (const l of arr) {
+      const fecha = l.fecha || null, desc = l.descripcion || null;
+      const cargo = Number(l.cargo) || 0, abono = Number(l.abono) || 0;
+      if (existe.get(req.empresa, cuenta_id, fecha || '', desc || '', cargo, abono)) { omitidas++; continue; }
+      ins.run(cuenta_id, fecha, desc, cargo, abono, l.saldo == null ? null : Number(l.saldo), lote, req.empresa);
+      importadas++;
+    }
   });
   tx(lineas);
-  audit(req, 'Tesoreria', 'Importar cartola', lineas.length + ' lineas (cuenta ' + cuenta_id + ')');
-  res.json({ ok: true, importadas: lineas.length, lote });
+  audit(req, 'Tesoreria', 'Importar cartola', importadas + ' importadas, ' + omitidas + ' omitidas (cuenta ' + cuenta_id + ')');
+  res.json({ ok: true, importadas, omitidas, lote });
 });
 
 router.get('/cartola', (req, res) => {
