@@ -11,24 +11,25 @@ router.post('/login', (req, res) => {
   if (!u || !bcrypt.compareSync(password || '', u.password_hash))
     return res.status(401).json({ error: 'Credenciales invalidas' });
   auditRaw({ usuario_id: u.id, usuario_nombre: u.nombre, usuario_email: u.email, rol: u.rol, empresa: u.empresa || null, modulo: 'Sesion', accion: 'Inicio de sesion', detalle: null });
-  res.json({ token: sign(u), usuario: { id: u.id, nombre: u.nombre, email: u.email, rol: u.rol, empresa: u.empresa || null } });
+  res.json({ token: sign(u), usuario: { id: u.id, nombre: u.nombre, email: u.email, rol: u.rol, empresa: u.empresa || null, bodega_id: u.bodega_id || null } });
 });
 
 router.get('/me', auth, (req, res) => res.json(req.user));
 
 // Listado y creacion de usuarios (solo admin)
 router.get('/', auth, admin, (req, res) => {
-  res.json(db.prepare('SELECT id,nombre,email,rol,activo,empresa,created_at FROM usuarios ORDER BY nombre').all());
+  res.json(db.prepare('SELECT id,nombre,email,rol,activo,empresa,bodega_id,created_at FROM usuarios ORDER BY nombre').all());
 });
 router.post('/', auth, admin, (req, res) => {
-  const { nombre, email, password, rol, empresa } = req.body;
+  const { nombre, email, password, rol, empresa, bodega_id } = req.body;
   if (!nombre || !email || !password) return res.status(400).json({ error: 'nombre, email y password requeridos' });
+  const rolN = ['admin', 'bodeguero'].includes(rol) ? rol : 'usuario';
   try {
     const hash = bcrypt.hashSync(password, 10);
-    const r = db.prepare('INSERT INTO usuarios (nombre,email,password_hash,rol,empresa) VALUES (?,?,?,?,?)')
-      .run(nombre, email.toLowerCase().trim(), hash, rol === 'admin' ? 'admin' : 'usuario', empresa || null);
-    audit(req, 'Usuarios', 'Crear usuario', email.toLowerCase().trim() + ' (' + (rol === 'admin' ? 'admin' : 'usuario') + ')');
-    res.json(db.prepare('SELECT id,nombre,email,rol,activo,empresa FROM usuarios WHERE id=?').get(r.lastInsertRowid));
+    const r = db.prepare('INSERT INTO usuarios (nombre,email,password_hash,rol,empresa,bodega_id) VALUES (?,?,?,?,?,?)')
+      .run(nombre, email.toLowerCase().trim(), hash, rolN, empresa || null, rolN === 'bodeguero' ? (bodega_id || null) : null);
+    audit(req, 'Usuarios', 'Crear usuario', email.toLowerCase().trim() + ' (' + rolN + ')');
+    res.json(db.prepare('SELECT id,nombre,email,rol,activo,empresa,bodega_id FROM usuarios WHERE id=?').get(r.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'email ya registrado' }); }
 });
 router.put('/:id', auth, admin, (req, res) => {

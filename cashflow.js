@@ -1,9 +1,9 @@
 const express = require('express');
 const db = require('./db');
-const { auth } = require('./auth');
+const { auth, noBodeguero } = require('./auth');
 const { audit } = require('./audit');
 const router = express.Router();
-router.use(auth);
+router.use(auth, noBodeguero);
 
 // ===================== MOTOR FLUJO DE CAJA (compartido) =====================
 function flujoInferActividad(mv) {

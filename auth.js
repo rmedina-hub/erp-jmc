@@ -3,7 +3,7 @@ const SECRET = process.env.ERP_SECRET || 'cambia-esta-clave-secreta-en-produccio
 const EMPRESAS = ['jmc', 'trabancura'];
 
 function sign(user) {
-  return jwt.sign({ id: user.id, nombre: user.nombre, email: user.email, rol: user.rol, empresa: user.empresa || null },
+  return jwt.sign({ id: user.id, nombre: user.nombre, email: user.email, rol: user.rol, empresa: user.empresa || null, bodega_id: user.bodega_id || null },
     SECRET, { expiresIn: '12h' });
 }
 
@@ -30,9 +30,14 @@ function auth(req, res, next) {
   }
 }
 
+function noBodeguero(req, res, next) {
+  if (req.user && req.user.rol === 'bodeguero') return res.status(403).json({ error: 'Acceso restringido para el rol bodeguero' });
+  next();
+}
+
 function admin(req, res, next) {
   if (!req.user || req.user.rol !== 'admin') return res.status(403).json({ error: 'Requiere rol admin' });
   next();
 }
 
-module.exports = { sign, auth, admin, SECRET, EMPRESAS, resolverEmpresa };
+module.exports = { sign, auth, admin, noBodeguero, SECRET, EMPRESAS, resolverEmpresa };

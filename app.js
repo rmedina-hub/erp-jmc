@@ -43,10 +43,13 @@ async function doLogin(e) {
     $('#userName').textContent = USER.nombre;
     $('#userRol').textContent = '(' + USER.rol + ')';
     if (USER.rol !== 'admin') { $('#navUsuarios').style.display = 'none'; const na = document.getElementById('navAuditoria'); if (na) na.style.display = 'none'; }
+    if (USER.rol === 'bodeguero') {
+      document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.v !== 'inventario') a.style.display = 'none'; });
+    }
     if (USER.empresa && BRANDS[USER.empresa]) selectEmpresa(USER.empresa);
     const _sw = document.getElementById('empresaSwitch');
     if (_sw) _sw.style.display = (!USER.empresa) ? '' : 'none';
-    go('dashboard');
+    go(USER.rol === 'bodeguero' ? 'inventario' : 'dashboard');
   } catch (err) { $('#liErr').textContent = err.message; }
 }
 function logout() { TOKEN = null; USER = null; location.reload(); }
@@ -97,7 +100,9 @@ async function vInventario() {
   C().innerHTML = `<div class="tabs">
       <button data-t="valorizado">Inventario valorizado</button>
       <button data-t="movimientos">Movimientos / Kardex</button>
+      <button data-t="entregas">Entregas</button>
       <button data-t="productos">Productos</button>
+      <button data-t="colaboradores">Colaboradores</button>
       <button data-t="bodegas">Bodegas</button>
     </div><div id="invBody"></div>`;
   C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { invTab = b.dataset.t; renderInvTabs(); }));
@@ -105,7 +110,7 @@ async function vInventario() {
 }
 function renderInvTabs() {
   C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === invTab));
-  ({ valorizado: invValorizado, movimientos: invMovimientos, productos: invProductos, bodegas: invBodegas }[invTab])();
+  ({ valorizado: invValorizado, movimientos: invMovimientos, entregas: invEntregas, productos: invProductos, colaboradores: invColaboradores, bodegas: invBodegas }[invTab] || invValorizado)();
 }
 async function invValorizado() {
   const d = await api('GET', '/inventario/valorizado');
@@ -152,8 +157,26 @@ async function guardarMov() {
 async function invProductos() {
   const prods = await api('GET', '/inventario/productos');
   $('#invBody').innerHTML = `<div class="card"><h3>Productos <button class="btn" onclick="formProd()">+ Nuevo producto</button></h3>
-    <table><tr><th>SKU</th><th>Nombre</th><th>Unidad</th><th class="num">Stock</th><th class="num">PMP</th><th class="num">Stock min</th></tr>
-    ${prods.length ? prods.map(p => `<tr><td>${esc(p.sku)}</td><td>${esc(p.nombre)}</td><td>${esc(p.unidad)}</td><td class="num">${num(p.stock,2)}</td><td class="num">${clp(p.costo_promedio)}</td><td class="num">${num(p.stock_minimo,2)}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin productos</td></tr>'}</table></div>`;
+    <div class="scroll"><table><tr><th>Foto</th><th>SKU</th><th>Nombre</th><th>Unidad</th><th class="num">Stock</th><th class="num">PMP</th><th class="num">Stock min</th><th></th></tr>
+    ${prods.length ? prods.map(p => `<tr>
+      <td>${p.tiene_foto ? `<img id="fp_${p.id}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;background:#eee" onclick="verFotoProd(${p.id})">` : '<span class="muted">—</span>'}</td>
+      <td>${esc(p.sku)}</td><td>${esc(p.nombre)}</td><td>${esc(p.unidad)}</td><td class="num">${num(p.stock,2)}</td><td class="num">${clp(p.costo_promedio)}</td><td class="num">${num(p.stock_minimo,2)}</td>
+      <td><label class="btn sm ghost" style="cursor:pointer;margin:0">${p.tiene_foto?'cambiar foto':'subir foto'}<input type="file" accept="image/*" style="display:none" onchange="subirFotoProd(${p.id},this)"></label></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Sin productos</td></tr>'}</table></div></div>`;
+  prods.filter(p => p.tiene_foto).forEach(p => cargarFotoProd(p.id));
+}
+async function cargarFotoProd(id) {
+  try { const r = await fetch('/api/inventario/productos/' + id + '/foto', { headers: { Authorization: 'Bearer ' + TOKEN, 'X-Empresa': activeEmpresa() } });
+    if (!r.ok) return; const b = await r.blob(); const el = document.getElementById('fp_' + id); if (el) el.src = URL.createObjectURL(b); } catch (e) {}
+}
+async function verFotoProd(id) {
+  try { const r = await fetch('/api/inventario/productos/' + id + '/foto', { headers: { Authorization: 'Bearer ' + TOKEN, 'X-Empresa': activeEmpresa() } });
+    if (!r.ok) { alert('Sin foto'); return; } const b = await r.blob(); window.open(URL.createObjectURL(b), '_blank'); } catch (e) {}
+}
+async function subirFotoProd(id, input) {
+  const f = input.files[0]; if (!f) return; if (f.size > 8 * 1024 * 1024) { alert('La imagen supera 8MB.'); return; }
+  const rd = new FileReader();
+  rd.onload = async () => { try { await api('POST', '/inventario/productos/' + id + '/foto', { nombre: f.name, mime: f.type || 'image/jpeg', base64: String(rd.result).split(',')[1] }); invProductos(); } catch (e) { alert('Error al subir: ' + e.message); } };
+  rd.readAsDataURL(f);
 }
 function formProd() {
   modal(`<h3>Nuevo producto</h3>
@@ -167,20 +190,98 @@ async function guardarProd() {
   try { await api('POST', '/inventario/productos', { sku: val('pSku'), nombre: val('pNom'), unidad: val('pUni'), stock_minimo: val('pMin') }); closeModal(); invProductos(); }
   catch (e) { $('#pErr').textContent = e.message; }
 }
+const TIPOS_BODEGA = { CENTRAL: 'Central', LAMPA: 'Lampa', OBRA: 'En obra' };
 async function invBodegas() {
-  const bods = await api('GET', '/inventario/bodegas');
+  const bods = await api('GET', '/inventario/bodegas'); window._bodegas = bods;
   $('#invBody').innerHTML = `<div class="card"><h3>Bodegas <button class="btn" onclick="formBod()">+ Nueva bodega</button></h3>
-    <table><tr><th>Codigo</th><th>Nombre</th><th>Ubicacion</th></tr>
-    ${bods.length ? bods.map(b => `<tr><td>${esc(b.codigo)}</td><td>${esc(b.nombre)}</td><td>${esc(b.ubicacion||'')}</td></tr>`).join('') : '<tr><td colspan="3" class="empty">Sin bodegas</td></tr>'}</table></div>`;
+    <table><tr><th>Codigo</th><th>Nombre</th><th>Tipo</th><th>Ubicacion</th><th></th></tr>
+    ${bods.length ? bods.map(b => `<tr><td>${esc(b.codigo)}</td><td>${esc(b.nombre)}</td><td>${TIPOS_BODEGA[b.tipo] || esc(b.tipo || '-')}</td><td>${esc(b.ubicacion||'')}</td><td><button class="btn sm ghost" onclick="editarBod(${b.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin bodegas</td></tr>'}</table></div>`;
 }
-function formBod() {
-  modal(`<h3>Nueva bodega</h3><div class="row"><div class="field"><label>Codigo</label><input id="bCod"></div><div class="field"><label>Nombre</label><input id="bNom"></div></div>
-    <div class="row"><div class="field"><label>Ubicacion</label><input id="bUbi"></div></div><div class="err" id="bErr"></div>
-    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarBod()">Guardar</button></div>`);
+function editarBod(id) { formBod((window._bodegas || []).find(x => x.id === id)); }
+function formBod(b) {
+  modal(`<h3>${b ? 'Editar bodega' : 'Nueva bodega'}</h3>
+    <div class="row"><div class="field"><label>Codigo</label><input id="bCod" value="${b ? esc(b.codigo) : ''}"></div><div class="field"><label>Nombre</label><input id="bNom" value="${b ? esc(b.nombre) : ''}"></div></div>
+    <div class="row"><div class="field"><label>Tipo</label><select id="bTipo"><option value="CENTRAL">Central</option><option value="LAMPA">Lampa</option><option value="OBRA">En obra</option></select></div>
+      <div class="field"><label>Ubicacion</label><input id="bUbi" value="${b ? esc(b.ubicacion || '') : ''}"></div></div>
+    <div class="err" id="bErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarBod(${b ? b.id : 0})">Guardar</button></div>`);
+  if (b) document.getElementById('bTipo').value = b.tipo || 'CENTRAL';
 }
-async function guardarBod() {
-  try { await api('POST', '/inventario/bodegas', { codigo: val('bCod'), nombre: val('bNom'), ubicacion: val('bUbi') }); closeModal(); invBodegas(); }
+async function guardarBod(id) {
+  try { const body = { codigo: val('bCod'), nombre: val('bNom'), ubicacion: val('bUbi'), tipo: val('bTipo') };
+    if (id) await api('PUT', '/inventario/bodegas/' + id, body); else await api('POST', '/inventario/bodegas', body); closeModal(); invBodegas(); }
   catch (e) { $('#bErr').textContent = e.message; }
+}
+// ===================== ENTREGAS Y COLABORADORES (BODEGA) =====================
+async function invColaboradores() {
+  const cs = await api('GET', '/colaboradores'); window._colabs = cs;
+  $('#invBody').innerHTML = `<div class="card"><h3>Colaboradores <button class="btn" onclick="formColab()">+ Nuevo colaborador</button></h3>
+    <table><tr><th>Nombre</th><th>Apellido</th><th>RUT</th><th>Cargo</th><th>Activo</th><th></th></tr>
+    ${cs.length ? cs.map(c => `<tr><td>${esc(c.nombre)}</td><td>${esc(c.apellido||'')}</td><td>${esc(c.rut||'')}</td><td>${esc(c.cargo||'')}</td><td>${c.activo ? '<span class="pill ok">SI</span>' : '<span class="pill no">NO</span>'}</td><td><button class="btn sm ghost" onclick="editarColab(${c.id})">Editar</button> <button class="btn sm red" onclick="delColab(${c.id})">x</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin colaboradores</td></tr>'}</table></div>`;
+}
+function editarColab(id) { formColab((window._colabs || []).find(x => x.id === id)); }
+function formColab(c) {
+  modal(`<h3>${c ? 'Editar' : 'Nuevo'} colaborador</h3>
+    <div class="row"><div class="field"><label>Nombre</label><input id="clNom" value="${c ? esc(c.nombre) : ''}"></div><div class="field"><label>Apellido</label><input id="clApe" value="${c ? esc(c.apellido || '') : ''}"></div></div>
+    <div class="row"><div class="field"><label>RUT</label><input id="clRut" value="${c ? esc(c.rut || '') : ''}"></div><div class="field"><label>Cargo</label><input id="clCargo" value="${c ? esc(c.cargo || '') : ''}"></div></div>
+    <div class="err" id="clErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarColab(${c ? c.id : 0})">Guardar</button></div>`);
+}
+async function guardarColab(id) {
+  try { const body = { nombre: val('clNom'), apellido: val('clApe'), rut: val('clRut'), cargo: val('clCargo') };
+    if (id) await api('PUT', '/colaboradores/' + id, body); else await api('POST', '/colaboradores', body); closeModal(); invColaboradores(); }
+  catch (e) { $('#clErr').textContent = e.message; }
+}
+async function delColab(id) { if (confirm('Eliminar colaborador?')) { await api('DELETE', '/colaboradores/' + id); invColaboradores(); } }
+
+async function invEntregas() {
+  $('#invBody').innerHTML = `<div class="card"><h3>Entregas a colaboradores</h3>
+    <p class="muted">Material: descuenta del stock de la bodega. Herramientas/maquinas: se prestan y se marcan al devolver (fin de jornada).</p>
+    <div class="row"><div class="field" style="max-width:260px"><label>Ver</label><select id="entFiltro" onchange="entLoad()">
+        <option value="">Todas</option><option value="MATERIAL">Material</option><option value="HERRAMIENTA">Herramientas / maquinas</option><option value="PEND">Herramientas sin devolver</option></select></div>
+      <button class="btn" onclick="formEntrega()">+ Registrar entrega</button>
+      <button class="btn ghost" onclick="entResumen()">Resumen por colaborador</button></div>
+    <div id="entList" style="margin-top:14px"></div></div>`;
+  entLoad();
+}
+async function entLoad() {
+  const f = val('entFiltro'); let qs = '';
+  if (f === 'MATERIAL' || f === 'HERRAMIENTA') qs = '?tipo=' + f;
+  else if (f === 'PEND') qs = '?tipo=HERRAMIENTA&estado=ENTREGADO';
+  const rows = await api('GET', '/entregas' + qs);
+  $('#entList').innerHTML = `<div class="scroll"><table><tr><th>Fecha</th><th>Tipo</th><th>Item</th><th class="num">Cant.</th><th>Colaborador</th><th>Bodega</th><th>Estado</th><th></th></tr>
+    ${rows.length ? rows.map(e => `<tr><td>${fdate(e.fecha_entrega)}</td><td>${e.tipo}</td><td>${esc(e.producto || e.descripcion || '')}</td><td class="num">${num(e.cantidad,2)}</td><td>${esc(e.colaborador || '')}</td><td>${esc(e.bodega || '')}</td>
+      <td>${e.estado === 'DEVUELTO' ? '<span class="pill ok">DEVUELTO</span>' : '<span class="pill warn">' + (e.tipo === 'HERRAMIENTA' ? 'PRESTADO' : 'ENTREGADO') + '</span>'}</td>
+      <td>${e.tipo === 'HERRAMIENTA' && e.estado !== 'DEVUELTO' ? `<button class="btn sm green" onclick="devolverEnt(${e.id})">Devolver</button> ` : ''}<button class="btn sm red" onclick="delEnt(${e.id})">x</button></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Sin entregas</td></tr>'}</table></div>`;
+}
+async function formEntrega() {
+  const [bods, cols, prods] = await Promise.all([api('GET', '/inventario/bodegas'), api('GET', '/colaboradores'), api('GET', '/inventario/productos')]);
+  modal(`<h3>Registrar entrega</h3>
+    <div class="row"><div class="field"><label>Tipo</label><select id="eTipo" onchange="entToggle()"><option value="MATERIAL">Material (descuenta stock)</option><option value="HERRAMIENTA">Herramienta / maquina (con devolucion)</option></select></div>
+      <div class="field"><label>Fecha</label><input id="eFecha" type="date" value="${hoy()}"></div></div>
+    <div class="row"><div class="field"><label>Bodega</label><select id="eBod">${bods.map(b => `<option value="${b.id}">${esc(b.nombre)}</option>`).join('')}</select></div>
+      <div class="field"><label>Colaborador</label><select id="eColab"><option value="">-- elegir --</option>${cols.map(c => `<option value="${c.id}">${esc(c.nombre)} ${esc(c.apellido || '')}</option>`).join('')}</select></div></div>
+    <div class="row" id="eProdRow"><div class="field"><label>Producto</label><select id="eProd"><option value="">-- elegir --</option>${prods.map(p => `<option value="${p.id}">${esc(p.sku)} - ${esc(p.nombre)} (stock ${num(p.stock,0)})</option>`).join('')}</select></div></div>
+    <div class="row" id="eDescRow" style="display:none"><div class="field"><label>Herramienta / maquina</label><input id="eDesc" placeholder="Ej: Taladro Bosch, Andamio"></div></div>
+    <div class="row"><div class="field"><label>Cantidad</label><input id="eCant" type="number" step="0.01" value="1"></div><div class="field"><label>Glosa</label><input id="eGlosa"></div></div>
+    <div class="err" id="eErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarEntrega()">Guardar</button></div>`);
+}
+function entToggle() { const t = val('eTipo'); document.getElementById('eProdRow').style.display = t === 'MATERIAL' ? '' : 'none'; document.getElementById('eDescRow').style.display = t === 'HERRAMIENTA' ? '' : 'none'; }
+async function guardarEntrega() {
+  const t = val('eTipo');
+  const body = { tipo: t, bodega_id: val('eBod'), colaborador_id: val('eColab') || null, cantidad: val('eCant'), glosa: val('eGlosa'), fecha_entrega: val('eFecha') };
+  if (t === 'MATERIAL') body.producto_id = val('eProd') || null; else body.descripcion = val('eDesc');
+  try { await api('POST', '/entregas', body); closeModal(); entLoad(); } catch (e) { $('#eErr').textContent = e.message; }
+}
+async function devolverEnt(id) { await api('POST', '/entregas/' + id + '/devolver', {}); entLoad(); }
+async function delEnt(id) { if (confirm('Eliminar registro de entrega?')) { await api('DELETE', '/entregas/' + id); entLoad(); } }
+async function entResumen() {
+  const rows = await api('GET', '/entregas/resumen-colaborador');
+  modal(`<h3>Material entregado por colaborador</h3>
+    <table><tr><th>Colaborador</th><th class="num">N&deg; entregas</th><th class="num">Cantidad total</th></tr>
+    ${rows.length ? rows.map(r => `<tr><td>${esc(r.colaborador || '(sin asignar)')}</td><td class="num">${r.entregas}</td><td class="num">${num(r.total_cantidad,2)}</td></tr>`).join('') : '<tr><td colspan="3" class="empty">Sin datos</td></tr>'}</table>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
 }
 
 // ===================== TESORERIA =====================
@@ -590,16 +691,20 @@ async function vUsuarios() {
     <table><tr><th>Nombre</th><th>Email</th><th>Empresa</th><th>Rol</th><th>Activo</th><th></th></tr>
     ${us.map(u => `<tr><td>${esc(u.nombre)}</td><td>${esc(u.email)}</td><td>${u.empresa && BRANDS[u.empresa] ? esc(BRANDS[u.empresa].nombre) : '<span class="muted">Todas</span>'}</td><td>${u.rol}</td><td>${u.activo ? '<span class="pill ok">SI</span>' : '<span class="pill no">NO</span>'}</td><td><button class="btn sm ghost" onclick="formResetPass(${u.id},'${esc(u.email)}')">Resetear clave</button></td></tr>`).join('')}</table></div>`;
 }
-function formUsuario() {
+async function formUsuario() {
+  let bods = [];
+  try { bods = await api('GET', '/inventario/bodegas'); } catch (e) {}
   modal(`<h3>Nuevo usuario</h3>
     <div class="row"><div class="field"><label>Nombre</label><input id="uNom"></div><div class="field"><label>Email</label><input id="uEmail" type="email"></div></div>
-    <div class="row"><div class="field"><label>Contrasena</label><input id="uPass" type="password"></div><div class="field"><label>Rol</label><select id="uRol"><option value="usuario">usuario</option><option value="admin">admin</option></select></div></div>
+    <div class="row"><div class="field"><label>Contrasena</label><input id="uPass" type="password"></div><div class="field"><label>Rol</label><select id="uRol" onchange="uRolToggle()"><option value="usuario">usuario</option><option value="admin">admin</option><option value="bodeguero">bodeguero (acceso solo a su bodega)</option></select></div></div>
     <div class="row"><div class="field"><label>Empresa</label><select id="uEmp"><option value="">Todas (puede cambiar)</option><option value="trabancura">Trabancura</option><option value="jmc">JMC Ingenieria</option></select></div></div>
+    <div class="row" id="uBodRow" style="display:none"><div class="field"><label>Bodega asignada</label><select id="uBod"><option value="">-- elegir bodega --</option>${bods.map(b => `<option value="${b.id}">${esc(b.nombre)} (${esc(b.tipo || '')})</option>`).join('')}</select></div></div>
     <div class="err" id="uErr"></div>
     <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarUsuario()">Guardar</button></div>`);
 }
+function uRolToggle() { const r = document.getElementById('uBodRow'); if (r) r.style.display = (val('uRol') === 'bodeguero') ? '' : 'none'; }
 async function guardarUsuario() {
-  try { await api('POST', '/usuarios', { nombre: val('uNom'), email: val('uEmail'), password: val('uPass'), rol: val('uRol'), empresa: val('uEmp') }); closeModal(); vUsuarios(); }
+  try { await api('POST', '/usuarios', { nombre: val('uNom'), email: val('uEmail'), password: val('uPass'), rol: val('uRol'), empresa: val('uEmp'), bodega_id: val('uRol') === 'bodeguero' ? (val('uBod') || null) : null }); closeModal(); vUsuarios(); }
   catch (e) { $('#uErr').textContent = e.message; }
 }
 

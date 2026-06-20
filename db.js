@@ -105,6 +105,16 @@ CREATE TABLE IF NOT EXISTS archivos (
   id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, entidad TEXT NOT NULL, entidad_id INTEGER NOT NULL,
   nombre TEXT, mime TEXT, contenido BLOB, created_at TEXT NOT NULL DEFAULT (datetime('now')));
 
+CREATE TABLE IF NOT EXISTS colaboradores (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, nombre TEXT NOT NULL, apellido TEXT, rut TEXT,
+  cargo TEXT, activo INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS entregas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, bodega_id INTEGER, colaborador_id INTEGER,
+  tipo TEXT NOT NULL DEFAULT 'MATERIAL', producto_id INTEGER, descripcion TEXT, cantidad REAL NOT NULL DEFAULT 0,
+  fecha_entrega TEXT NOT NULL, estado TEXT NOT NULL DEFAULT 'ENTREGADO', fecha_devolucion TEXT,
+  movimiento_id INTEGER, glosa TEXT, usuario_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
 CREATE TABLE IF NOT EXISTS auditoria (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT (datetime('now')),
   usuario_id INTEGER, usuario_nombre TEXT, usuario_email TEXT, rol TEXT, empresa TEXT,
@@ -136,12 +146,16 @@ const ADD_COLS = [
   "ALTER TABLE activo_kilometrajes ADD COLUMN empresa TEXT",
   "ALTER TABLE activo_seguros ADD COLUMN empresa TEXT",
   "ALTER TABLE activo_documentos ADD COLUMN empresa TEXT",
-  "ALTER TABLE flujo_proyeccion ADD COLUMN empresa TEXT"
+  "ALTER TABLE flujo_proyeccion ADD COLUMN empresa TEXT",
+  "ALTER TABLE bodegas ADD COLUMN tipo TEXT",
+  "ALTER TABLE usuarios ADD COLUMN bodega_id INTEGER"
 ];
 for (const sql of ADD_COLS) { try { db.exec(sql); } catch (e) {} }
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_auditoria_emp_ts ON auditoria(empresa, ts)'); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_facturas_emp ON facturas(empresa, estado, fecha_vencimiento)'); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_archivos_ent ON archivos(entidad, entidad_id)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_entregas_emp ON entregas(empresa, bodega_id, estado)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_colab_emp ON colaboradores(empresa)'); } catch (e) {}
 
 // ---- Backfill: todos los datos preexistentes (empresa NULL) pasan a JMC ----
 const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancarias', 'tes_movimientos',

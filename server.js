@@ -13,6 +13,8 @@ app.use('/api/flujo', require('./cashflow'));
 app.use('/api/activos', require('./assets'));
 app.use('/api/auditoria', require('./auditoria'));
 app.use('/api/facturas', require('./facturas'));
+app.use('/api/colaboradores', require('./colaboradores'));
+app.use('/api/entregas', require('./entregas'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 

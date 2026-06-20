@@ -5,23 +5,64 @@ const { audit } = require('./audit');
 const router = express.Router();
 router.use(auth);
 
+// El bodeguero queda atado a su bodega
+function bodegaFija(req) { return req.user && req.user.rol === 'bodeguero' ? (req.user.bodega_id || 0) : null; }
+
+
 // ---------- Bodegas ----------
 router.get('/bodegas', (req, res) => {
+  const bf = bodegaFija(req);
+  if (bf) return res.json(db.prepare('SELECT * FROM bodegas WHERE empresa=? AND id=? ORDER BY nombre').all(req.empresa, bf));
   res.json(db.prepare('SELECT * FROM bodegas WHERE empresa=? ORDER BY nombre').all(req.empresa));
 });
 router.post('/bodegas', (req, res) => {
-  const { codigo, nombre, ubicacion } = req.body;
+  if (bodegaFija(req)) return res.status(403).json({ error: 'El bodeguero no puede crear bodegas' });
+  const { codigo, nombre, ubicacion, tipo } = req.body;
   if (!codigo || !nombre) return res.status(400).json({ error: 'codigo y nombre requeridos' });
   try {
-    const r = db.prepare('INSERT INTO bodegas (codigo,nombre,ubicacion,empresa) VALUES (?,?,?,?)').run(codigo, nombre, ubicacion || null, req.empresa);
-    audit(req, 'Inventario', 'Crear bodega', codigo + ' - ' + nombre);
+    const r = db.prepare('INSERT INTO bodegas (codigo,nombre,ubicacion,tipo,empresa) VALUES (?,?,?,?,?)').run(codigo, nombre, ubicacion || null, tipo || 'CENTRAL', req.empresa);
+    audit(req, 'Inventario', 'Crear bodega', codigo + ' - ' + nombre + ' (' + (tipo || 'CENTRAL') + ')');
     res.json(db.prepare('SELECT * FROM bodegas WHERE id=?').get(r.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'codigo duplicado' }); }
+});
+router.put('/bodegas/:id', (req, res) => {
+  if (bodegaFija(req)) return res.status(403).json({ error: 'No autorizado' });
+  const b = req.body; const bod = db.prepare('SELECT * FROM bodegas WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!bod) return res.status(404).json({ error: 'No existe' });
+  db.prepare('UPDATE bodegas SET codigo=?, nombre=?, ubicacion=?, tipo=? WHERE id=? AND empresa=?')
+    .run(b.codigo != null ? b.codigo : bod.codigo, b.nombre != null ? b.nombre : bod.nombre, b.ubicacion != null ? b.ubicacion : bod.ubicacion, b.tipo || bod.tipo, req.params.id, req.empresa);
+  audit(req, 'Inventario', 'Editar bodega', (b.codigo != null ? b.codigo : bod.codigo) + ' - ' + (b.nombre != null ? b.nombre : bod.nombre));
+  res.json(db.prepare('SELECT * FROM bodegas WHERE id=?').get(req.params.id));
 });
 
 // ---------- Productos ----------
 router.get('/productos', (req, res) => {
-  res.json(db.prepare('SELECT * FROM productos WHERE empresa=? ORDER BY nombre').all(req.empresa));
+  const rows = db.prepare('SELECT * FROM productos WHERE empresa=? ORDER BY nombre').all(req.empresa);
+  const fa = db.prepare("SELECT 1 FROM archivos WHERE entidad='producto' AND entidad_id=? LIMIT 1");
+  rows.forEach(p => { p.tiene_foto = fa.get(p.id) ? 1 : 0; });
+  res.json(rows);
+});
+// ---- Foto de producto ----
+router.post('/productos/:id/foto', (req, res) => {
+  const p = db.prepare('SELECT * FROM productos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!p) return res.status(404).json({ error: 'Producto no existe' });
+  const { nombre, mime, base64 } = req.body;
+  if (!base64) return res.status(400).json({ error: 'imagen requerida' });
+  let buf; try { buf = Buffer.from(String(base64).replace(/^data:[^,]*,/, ''), 'base64'); } catch (e) { return res.status(400).json({ error: 'imagen invalida' }); }
+  if (buf.length > 8 * 1024 * 1024) return res.status(400).json({ error: 'imagen demasiado grande (max 8MB)' });
+  db.prepare("DELETE FROM archivos WHERE entidad='producto' AND entidad_id=?").run(p.id);
+  db.prepare("INSERT INTO archivos (empresa,entidad,entidad_id,nombre,mime,contenido) VALUES (?,?,?,?,?,?)")
+    .run(req.empresa, 'producto', p.id, nombre || 'foto.jpg', mime || 'image/jpeg', buf);
+  audit(req, 'Inventario', 'Foto de producto', p.sku + ' - ' + p.nombre);
+  res.json({ ok: true });
+});
+router.get('/productos/:id/foto', (req, res) => {
+  const p = db.prepare('SELECT id FROM productos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!p) return res.status(404).json({ error: 'Producto no existe' });
+  const ar = db.prepare("SELECT * FROM archivos WHERE entidad='producto' AND entidad_id=? ORDER BY id DESC LIMIT 1").get(p.id);
+  if (!ar) return res.status(404).json({ error: 'Sin foto' });
+  res.setHeader('Content-Type', ar.mime || 'image/jpeg');
+  res.send(Buffer.from(ar.contenido));
 });
 router.post('/productos', (req, res) => {
   const { sku, nombre, unidad, stock_minimo } = req.body;
@@ -94,6 +135,7 @@ const crearMovimiento = db.transaction((data, userId, empresa) => {
 router.post('/movimientos', (req, res) => {
   try {
     if (!req.body.fecha) req.body.fecha = new Date().toISOString().slice(0, 10);
+    const bf = bodegaFija(req); if (bf) req.body.bodega_id = bf;
     const mov = crearMovimiento(req.body, req.user.id, req.empresa);
     audit(req, 'Inventario', 'Movimiento ' + (req.body.tipo || ''), 'Cant: ' + req.body.cantidad + (req.body.documento ? ' Doc: ' + req.body.documento : ''));
     res.json(mov);
@@ -108,6 +150,7 @@ router.get('/movimientos', (req, res) => {
              JOIN bodegas b ON b.id=m.bodega_id
              WHERE m.empresa=?`;
   const params = [req.empresa];
+  const bf = bodegaFija(req); if (bf) { sql += ' AND m.bodega_id=?'; params.push(bf); }
   if (producto_id) { sql += ' AND m.producto_id=?'; params.push(producto_id); }
   sql += ' ORDER BY m.id DESC LIMIT 500';
   res.json(db.prepare(sql).all(...params));
