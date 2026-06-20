@@ -45,22 +45,31 @@ app.get('/api/backup', (req, res) => {
   }
 });
 
-// === Auto-respaldo diario: el ERP EMPUJA su base al cPanel ===
-// (el cPanel no puede salir a internet, por eso el ERP envia)
+// === Auto-respaldo diario: el ERP EMPUJA su base ===
+//  1) al cPanel (binario)         -> BACKUP_PUSH_URL
+//  2) a Google Drive (base64)     -> BACKUP_DRIVE_URL (Apps Script Web App)
 function autoBackupPush() {
   try {
     const fs = require('fs');
     checkpointDb();
     const data = fs.readFileSync(DB_PATH);
-    const url = process.env.BACKUP_PUSH_URL || 'https://cotizaciones.jmcingenieria.cl/erp-backup-receiver.php';
-    fetch(url, {
-      method: 'POST',
-      headers: { 'X-JMC-Token': process.env.BACKUP_TOKEN || '', 'Content-Type': 'application/octet-stream' },
-      body: data
-    })
-      .then(r => r.text())
-      .then(t => console.log('[auto-backup]', t))
-      .catch(e => console.warn('[auto-backup] fallo envio:', String(e)));
+    const token = process.env.BACKUP_TOKEN || '';
+    const filename = 'erp-' + new Date().toISOString().slice(0, 10) + '.db';
+
+    // 1) cPanel
+    const cpUrl = process.env.BACKUP_PUSH_URL || 'https://cotizaciones.jmcingenieria.cl/erp-backup-receiver.php';
+    fetch(cpUrl, { method: 'POST', headers: { 'X-JMC-Token': token, 'Content-Type': 'application/octet-stream' }, body: data })
+      .then(r => r.text()).then(t => console.log('[auto-backup cpanel]', t))
+      .catch(e => console.warn('[auto-backup cpanel] fallo:', String(e)));
+
+    // 2) Google Drive (Apps Script)
+    const driveUrl = process.env.BACKUP_DRIVE_URL;
+    if (driveUrl) {
+      const b64 = data.toString('base64');
+      fetch(driveUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, filename, b64 }) })
+        .then(r => r.text()).then(t => console.log('[auto-backup drive]', t))
+        .catch(e => console.warn('[auto-backup drive] fallo:', String(e)));
+    }
   } catch (e) {
     console.warn('[auto-backup] error:', String(e));
   }
@@ -72,8 +81,7 @@ app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
 const PORT = process.env.PORT || 3000;
 if (require.main === module) {
   app.listen(PORT, () => console.log('ERP JMC corriendo en http://localhost:' + PORT));
-  // Primer respaldo ~1 min despues de arrancar, y luego cada 24 horas
-  setTimeout(autoBackupPush, 60 * 1000);
-  setInterval(autoBackupPush, 24 * 60 * 60 * 1000);
+  setTimeout(autoBackupPush, 60 * 1000);            // primer respaldo ~1 min tras arrancar
+  setInterval(autoBackupPush, 24 * 60 * 60 * 1000); // luego cada 24 horas
 }
 module.exports = app;
