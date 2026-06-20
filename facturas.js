@@ -88,4 +88,70 @@ router.post('/:id/pagar', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Importar CSV ----------
+function _num(s) {
+  if (s == null) return 0;
+  let v = String(s).replace(/[^0-9,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
+  return Number(v) || 0;
+}
+function _normDate(s) {
+  if (!s) return null; s = String(s).trim(); if (!s) return null;
+  let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0');
+  m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+  if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0');
+  return s;
+}
+function _parseCSVfac(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  if (!lines.length) return [];
+  const sep = (lines[0].match(/;/g) || []).length >= (lines[0].match(/,/g) || []).length ? ';' : ',';
+  const header = lines[0].split(sep).map(h => h.trim().toLowerCase());
+  const idx = (names) => header.findIndex(h => names.some(n => h.includes(n)));
+  const iC = idx(['cliente', 'proveedor', 'contraparte', 'nombre', 'razon']);
+  const iR = idx(['rut']);
+  const iN = idx(['factura', 'folio', 'documento', 'numero', 'n°', 'nº', 'num']);
+  const iE = idx(['emision', 'emisión']);
+  const iV = idx(['vencimiento', 'vence', 'vcto', 'pago']);
+  const iF = idx(['fecha']);
+  const iM = idx(['monto', 'total', 'importe', 'valor']);
+  const iG = idx(['glosa', 'detalle', 'descrip', 'concepto']);
+  const out = [];
+  for (let i = 1; i < lines.length; i++) {
+    const c = lines[i].split(sep);
+    out.push({
+      contraparte: (iC >= 0 ? c[iC] : '').trim(),
+      rut: (iR >= 0 ? c[iR] : '').trim(),
+      numero: (iN >= 0 ? c[iN] : '').trim(),
+      fecha_emision: _normDate(iE >= 0 ? c[iE] : (iF >= 0 ? c[iF] : '')),
+      fecha_vencimiento: _normDate(iV >= 0 ? c[iV] : ''),
+      monto: iM >= 0 ? _num(c[iM]) : 0,
+      glosa: (iG >= 0 ? c[iG] : '').trim()
+    });
+  }
+  return out;
+}
+router.post('/import', (req, res) => {
+  const tipo = (req.body.tipo || 'COBRAR').toUpperCase() === 'PAGAR' ? 'PAGAR' : 'COBRAR';
+  let filas = req.body.filas;
+  if (!filas && req.body.csv) filas = _parseCSVfac(req.body.csv);
+  if (!Array.isArray(filas) || !filas.length) return res.status(400).json({ error: 'No se reconocieron filas en el CSV' });
+  const existe = db.prepare("SELECT 1 FROM facturas WHERE empresa=? AND tipo=? AND IFNULL(numero,'')=? AND IFNULL(contraparte,'')=? AND monto=?");
+  const ins = db.prepare(`INSERT INTO facturas (empresa,tipo,contraparte,rut,numero,glosa,fecha_emision,fecha_vencimiento,monto,estado) VALUES (?,?,?,?,?,?,?,?,?,'PENDIENTE')`);
+  let importadas = 0, omitidas = 0;
+  const tx = db.transaction(() => {
+    for (const f of filas) {
+      const monto = Math.abs(Number(f.monto)) || 0;
+      const venc = f.fecha_vencimiento || null;
+      if (!venc || !monto) { omitidas++; continue; }
+      if (existe.get(req.empresa, tipo, f.numero || '', f.contraparte || '', monto)) { omitidas++; continue; }
+      ins.run(req.empresa, tipo, f.contraparte || null, f.rut || null, f.numero || null, f.glosa || null, f.fecha_emision || null, venc, monto);
+      importadas++;
+    }
+  });
+  tx();
+  audit(req, 'Cuentas C/P', 'Importar CSV', tipo + ': ' + importadas + ' importadas, ' + omitidas + ' omitidas');
+  res.json({ ok: true, importadas, omitidas });
+});
+
 module.exports = router;

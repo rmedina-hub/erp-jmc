@@ -242,17 +242,36 @@ async function tesMovsLoad() {
     ${m.length ? m.map(x => `<tr><td>${fdate(x.fecha)}</td><td><span class="pill ${x.tipo==='INGRESO'?'ok':'no'}">${x.tipo}</span></td><td>${esc(x.categoria||'')}</td><td>${esc(x.glosa||'')}</td><td class="num">${clp(x.monto)}</td><td>${x.conciliado?'<span class="pill ok">SI</span>':'<span class="pill warn">NO</span>'}</td><td><button class="btn sm red" onclick="delTesMov(${x.id})">x</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin movimientos</td></tr>'}</table></div>`;
 }
 async function delTesMov(id) { if (confirm('Eliminar movimiento?')) { await api('DELETE', '/tesoreria/movimientos/' + id); tesMovsLoad(); } }
+// Conceptos de flujo de caja (coinciden con las lineas de la planilla; se reflejan de inmediato en el informe)
+const CATS_FLUJO = {
+  INGRESO: ['Ventas en efectivo', 'Cobros de cuentas de clientes', 'Préstamo / inyección de efectivo', 'Ingresos por intereses', 'Otros ingresos en efectivo'],
+  EGRESO: ['Costos directos / materiales', 'Salarios directos', 'Subcontratistas', 'Remuneraciones / sueldos', 'Comisiones bancarias', 'Seguros', 'Arriendos', 'Servicios básicos', 'Otros gastos operativos', 'Cuotas de créditos bancarios', 'Gastos por intereses', 'Compra de activos / inversión', 'Impuestos']
+};
 function formTesMov() {
   modal(`<h3>Ingreso / Egreso</h3>
     <div class="row"><div class="field"><label>Fecha</label><input id="xFecha" type="date" value="${hoy()}"></div>
-      <div class="field"><label>Tipo</label><select id="xTipo"><option value="INGRESO">INGRESO</option><option value="EGRESO">EGRESO</option></select></div></div>
-    <div class="row"><div class="field"><label>Monto</label><input id="xMonto" type="number"></div><div class="field"><label>Categoria</label><input id="xCat"></div></div>
+      <div class="field"><label>Tipo</label><select id="xTipo" onchange="catFlujoOpts()"><option value="INGRESO">INGRESO</option><option value="EGRESO">EGRESO</option></select></div></div>
+    <div class="row"><div class="field"><label>Monto</label><input id="xMonto" type="number"></div>
+      <div class="field"><label>Categoria (concepto de flujo)</label><select id="xCat" onchange="catFlujoToggle()"></select></div></div>
+    <div class="row" id="xCatOtroRow" style="display:none"><div class="field"><label>Especificar categoria</label><input id="xCatOtro"></div></div>
     <div class="row"><div class="field"><label>Documento</label><input id="xDoc"></div><div class="field"><label>Glosa</label><input id="xGlosa"></div></div>
+    <p class="muted" style="font-size:12px">La categoria define donde aparece el movimiento en el Flujo de caja (informe y planilla).</p>
     <div class="err" id="xErr"></div>
     <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarTesMov()">Guardar</button></div>`);
+  catFlujoOpts();
+}
+function catFlujoOpts() {
+  const tipo = val('xTipo');
+  const sel = document.getElementById('xCat'); if (!sel) return;
+  sel.innerHTML = (CATS_FLUJO[tipo] || []).map(c => `<option>${c}</option>`).join('') + '<option value="__otro">Otro (especificar)</option>';
+  catFlujoToggle();
+}
+function catFlujoToggle() {
+  const row = document.getElementById('xCatOtroRow'); if (row) row.style.display = (val('xCat') === '__otro') ? '' : 'none';
 }
 async function guardarTesMov() {
-  try { await api('POST', '/tesoreria/movimientos', { fecha: val('xFecha'), cuenta_id: tesCuenta, tipo: val('xTipo'), monto: val('xMonto'), categoria: val('xCat'), documento: val('xDoc'), glosa: val('xGlosa') }); closeModal(); tesMovsLoad(); }
+  const cat = val('xCat') === '__otro' ? val('xCatOtro') : val('xCat');
+  try { await api('POST', '/tesoreria/movimientos', { fecha: val('xFecha'), cuenta_id: tesCuenta, tipo: val('xTipo'), monto: val('xMonto'), categoria: cat, documento: val('xDoc'), glosa: val('xGlosa') }); closeModal(); tesMovsLoad(); }
   catch (e) { $('#xErr').textContent = e.message; }
 }
 async function tesCartola() {
@@ -727,7 +746,7 @@ async function facLista() {
   const esCobrar = facTipo === 'COBRAR';
   const pend = esCobrar ? d.resumen.cobrar_pend : d.resumen.pagar_pend;
   $('#facBody').innerHTML = `<div class="card">
-    <h3>${esCobrar ? 'Cuentas por cobrar' : 'Cuentas por pagar'} <button class="btn" onclick="formFactura()">+ Nueva factura ${esCobrar ? 'por cobrar' : 'por pagar'}</button></h3>
+    <h3>${esCobrar ? 'Cuentas por cobrar' : 'Cuentas por pagar'} <button class="btn" onclick="formFactura()">+ Nueva factura ${esCobrar ? 'por cobrar' : 'por pagar'}</button> <button class="btn ghost" onclick="formImportFac()">Importar CSV</button></h3>
     <p class="muted">Pendiente total: <b>${clp(pend)}</b>. Las facturas pendientes se proyectan automaticamente en el <b>Flujo de caja</b> segun su fecha de vencimiento.</p>
     <div class="scroll"><table><tr><th>${esCobrar ? 'Cliente' : 'Proveedor'}</th><th>RUT</th><th>N&deg; Factura</th><th>Emision</th><th>Vence</th><th class="num">Monto</th><th>Estado</th><th></th></tr>
     ${d.items.length ? d.items.map(f => `<tr><td>${esc(f.contraparte || '')}</td><td>${esc(f.rut || '')}</td><td>${esc(f.numero || '')}</td><td>${fdate(f.fecha_emision)}</td><td>${fdate(f.fecha_vencimiento)} ${f.estado === 'PENDIENTE' ? venceBadge(f.fecha_vencimiento) : ''}</td><td class="num">${clp(f.monto)}</td><td>${f.estado === 'PAGADA' ? `<span class="pill ok">${esCobrar ? 'COBRADA' : 'PAGADA'}</span>` : '<span class="pill warn">PENDIENTE</span>'}</td>
@@ -761,6 +780,26 @@ async function pagarFactura(id) {
 }
 async function doPagarFactura(id) { await api('POST', '/facturas/' + id + '/pagar', { fecha_pago: val('pgF'), cuenta_id: val('pgC') || null }); closeModal(); facLista(); }
 async function delFactura(id) { if (confirm('Eliminar esta factura?')) { await api('DELETE', '/facturas/' + id); facLista(); } }
+function formImportFac() {
+  const esCobrar = facTipo === 'COBRAR';
+  modal(`<h3>Importar ${esCobrar ? 'cuentas por cobrar' : 'cuentas por pagar'} (CSV)</h3>
+    <p class="muted" style="margin-bottom:10px">Columnas reconocidas: <b>${esCobrar ? 'cliente' : 'proveedor'}, rut, numero, emision, vencimiento, monto, glosa</b> (separador ; o ,). Fechas dd/mm/aaaa o aaaa-mm-dd. Se omiten filas sin vencimiento o monto, y las ya cargadas.</p>
+    <div class="row"><div class="field"><label>Archivo CSV</label><input id="fiFile" type="file" accept=".csv,text/csv" onchange="leerCSVFac()"></div></div>
+    <div class="row"><div class="field"><label>Contenido CSV</label><textarea id="fiTxt" rows="7" placeholder="${esCobrar ? 'cliente' : 'proveedor'};rut;numero;emision;vencimiento;monto"></textarea></div></div>
+    <div class="err" id="fiErr"></div><div id="fiRes"></div>
+    <div class="right" style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="importarFac()">Importar</button></div>`);
+}
+function leerCSVFac() {
+  const f = document.getElementById('fiFile').files[0]; if (!f) return;
+  const r = new FileReader(); r.onload = () => { document.getElementById('fiTxt').value = r.result; }; r.readAsText(f, 'utf-8');
+}
+async function importarFac() {
+  try {
+    const d = await api('POST', '/facturas/import', { tipo: facTipo, csv: val('fiTxt') });
+    $('#fiRes').innerHTML = `<div class="card" style="margin-top:10px"><b>${d.importadas}</b> importadas${d.omitidas ? `, <b>${d.omitidas}</b> omitidas` : ''}.</div>`;
+    facLista();
+  } catch (e) { $('#fiErr').textContent = e.message; }
+}
 
 // ===================== AUDITORIA (historial) =====================
 const AUDIT_MODS = ['Sesion', 'Inventario', 'Tesoreria', 'Creditos', 'Activos', 'Flujo', 'Usuarios'];
