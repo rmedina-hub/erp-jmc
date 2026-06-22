@@ -19,6 +19,7 @@ app.use('/api/terceros', require('./terceros'));
 app.use('/api/maquinarias', require('./maquinarias'));
 app.use('/api/garantias', require('./garantias'));
 app.use('/api/cajachica', require('./cajachica'));
+app.use('/api/compras', require('./compras'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 

@@ -55,11 +55,11 @@ async function doLogin(e) {
 function logout() { TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria' };
 function go(v) {
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
 
@@ -1025,6 +1025,154 @@ async function verCaja(id) {
 }
 async function addCajaMov(id) { try { await api('POST', '/cajachica/' + id + '/movimientos', { tipo: val('mvTipo'), fecha: val('mvF'), monto: val('mvMonto'), categoria: val('mvCat'), glosa: val('mvGlosa'), documento: val('mvDoc') }); await vCajaChica(); verCaja(id); } catch (e) { alert(e.message); } }
 async function delCajaMov(mid, id) { if (confirm('Eliminar movimiento?')) { await api('DELETE', '/cajachica/movimientos/' + mid); await vCajaChica(); verCaja(id); } }
+
+
+// ===================== COMPRAS / ABASTECIMIENTO =====================
+let cmpTab = 'solicitudes';
+let _items = [];
+function pillEstado(e) { const m = { PENDIENTE: 'warn', APROBADA: 'ok', RECHAZADA: 'no', RECIBIDA: 'ok', PARCIAL: 'warn', TOTAL: 'ok' }; return `<span class="pill ${m[e] || 'warn'}">${e}</span>`; }
+async function vCompras() {
+  C().innerHTML = `<div class="tabs"><button data-t="solicitudes">Solicitudes de materiales</button><button data-t="ordenes">Ordenes de compra</button></div><div id="cmpBody"></div>`;
+  C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { cmpTab = b.dataset.t; renderCmp(); }));
+  renderCmp();
+}
+function renderCmp() { C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === cmpTab)); ({ solicitudes: cmpSolicitudes, ordenes: cmpOrdenes }[cmpTab])(); }
+
+async function cmpSolicitudes() {
+  const ss = await api('GET', '/compras/solicitudes');
+  $('#cmpBody').innerHTML = `<div class="card"><h3>Solicitudes de materiales <button class="btn" onclick="formSolicitud()">+ Nueva solicitud</button></h3>
+    <p class="muted">Centraliza los requerimientos por obra. Tras la aprobacion (V&deg;B&deg;) se cotiza y se genera la orden de compra.</p>
+    <div class="scroll"><table><tr><th>N&deg;</th><th>Fecha</th><th>Solicitante</th><th>Bodega/Obra</th><th>Glosa</th><th>Estado</th><th></th></tr>
+    ${ss.length ? ss.map(s => `<tr><td>${esc(s.numero)}</td><td>${fdate(s.fecha)}</td><td>${esc(s.solicitante||'')}</td><td>${esc(s.bodega||'')}</td><td>${esc(s.glosa||'')}</td><td>${pillEstado(s.estado)}</td>
+      <td><button class="btn sm ghost" onclick="verSolicitud(${s.id})">Ver</button> ${USER.rol === 'admin' && s.estado === 'PENDIENTE' ? `<button class="btn sm green" onclick="aprobSol(${s.id},1)">Aprobar</button> <button class="btn sm red" onclick="aprobSol(${s.id},0)">Rechazar</button> ` : ''}${s.estado === 'APROBADA' ? `<button class="btn sm" onclick="ocDesdeSolicitud(${s.id})">Generar OC</button> ` : ''}<button class="btn sm red" onclick="delSol(${s.id})">x</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin solicitudes</td></tr>'}</table></div></div>`;
+}
+async function formSolicitud() {
+  _items = [{ descripcion: '', producto_id: '', cantidad: 1, unidad: '' }];
+  const [bods, prods] = await Promise.all([api('GET', '/inventario/bodegas'), api('GET', '/inventario/productos')]); window._prodsCmp = prods;
+  modal(`<h3>Nueva solicitud de materiales</h3>
+    <div class="row"><div class="field"><label>Fecha</label><input id="soF" type="date" value="${hoy()}"></div><div class="field"><label>Solicitante</label><input id="soSol"></div></div>
+    <div class="row"><div class="field"><label>Bodega / obra destino</label><select id="soBod"><option value="">--</option>${bods.map(b => `<option value="${b.id}">${esc(b.nombre)}</option>`).join('')}</select></div><div class="field"><label>Glosa</label><input id="soGlosa"></div></div>
+    <h4 style="margin:10px 0 4px">Items</h4><div id="soItems"></div>
+    <button class="btn sm ghost" onclick="addItemRow()">+ Agregar item</button>
+    <div class="err" id="soErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarSolicitud()">Guardar</button></div>`);
+  renderItemRows();
+}
+function renderItemRows() {
+  const prods = window._prodsCmp || [];
+  document.getElementById('soItems').innerHTML = _items.map((it, i) => `<div class="row" style="align-items:flex-end">
+    <div class="field"><label>Producto (o libre)</label><select onchange="_items[${i}].producto_id=this.value"><option value="">-- libre --</option>${prods.map(p => `<option value="${p.id}" ${it.producto_id == p.id ? 'selected' : ''}>${esc(p.sku)} - ${esc(p.nombre)}</option>`).join('')}</select></div>
+    <div class="field"><label>Descripcion</label><input value="${esc(it.descripcion || '')}" oninput="_items[${i}].descripcion=this.value"></div>
+    <div class="field" style="max-width:100px"><label>Cantidad</label><input type="number" value="${it.cantidad}" oninput="_items[${i}].cantidad=this.value"></div>
+    <div class="field" style="max-width:90px"><label>Unidad</label><input value="${esc(it.unidad || '')}" oninput="_items[${i}].unidad=this.value"></div>
+    <button class="btn sm red" onclick="rmItemRow(${i})">x</button></div>`).join('');
+}
+function addItemRow() { _items.push({ descripcion: '', producto_id: '', cantidad: 1, unidad: '' }); renderItemRows(); }
+function rmItemRow(i) { _items.splice(i, 1); if (!_items.length) _items.push({ descripcion: '', producto_id: '', cantidad: 1, unidad: '' }); renderItemRows(); }
+async function guardarSolicitud() {
+  const items = _items.filter(it => (it.producto_id || it.descripcion) && Number(it.cantidad) > 0);
+  if (!items.length) { $('#soErr').textContent = 'Agregue al menos un item con cantidad'; return; }
+  try { await api('POST', '/compras/solicitudes', { fecha: val('soF'), solicitante: val('soSol'), bodega_id: val('soBod') || null, glosa: val('soGlosa'), items }); closeModal(); cmpSolicitudes(); } catch (e) { $('#soErr').textContent = e.message; }
+}
+async function aprobSol(id, ap) { await api('POST', '/compras/solicitudes/' + id + '/' + (ap ? 'aprobar' : 'rechazar'), {}); cmpSolicitudes(); }
+async function delSol(id) { if (confirm('Eliminar solicitud?')) { await api('DELETE', '/compras/solicitudes/' + id); cmpSolicitudes(); } }
+async function verSolicitud(id) {
+  const s = await api('GET', '/compras/solicitudes/' + id);
+  const provs = await api('GET', '/terceros?tipo=PROVEEDOR');
+  modal(`<h3>Solicitud #${esc(s.numero)} ${pillEstado(s.estado)}</h3>
+    <p class="muted">${fdate(s.fecha)} · ${esc(s.solicitante||'')} · ${esc(s.glosa||'')}</p>
+    <table><tr><th>Item</th><th class="num">Cantidad</th><th>Unidad</th></tr>${s.items.map(i => `<tr><td>${esc(i.producto || i.descripcion || '')}</td><td class="num">${num(i.cantidad,2)}</td><td>${esc(i.unidad||'')}</td></tr>`).join('')}</table>
+    <h4 style="margin:12px 0 4px">Cuadro comparativo de cotizaciones</h4>
+    <div class="row" style="align-items:flex-end"><div class="field"><label>Proveedor</label><select id="coProv"><option value="">--</option>${provs.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join('')}</select></div>
+      <div class="field" style="max-width:150px"><label>Total cotizado</label><input id="coTot" type="number"></div><div class="field" style="max-width:130px"><label>Plazo</label><input id="coPlazo"></div>
+      <button class="btn sm" onclick="addCotiz(${id})">+ Agregar</button></div>
+    <table><tr><th>Proveedor</th><th class="num">Total</th><th>Plazo</th><th></th></tr>${s.cotizaciones.length ? s.cotizaciones.map(c => `<tr style="${c.seleccionada ? 'background:#e8f5e9' : ''}"><td>${esc(c.proveedor||'')}</td><td class="num">${clp(c.total)}</td><td>${esc(c.plazo||'')}</td><td>${c.seleccionada ? '<span class="pill ok">elegida</span>' : `<button class="btn sm green" onclick="selCotiz(${c.id},${id})">Elegir</button>`} <button class="btn sm red" onclick="delCotiz(${c.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="4" class="empty">Sin cotizaciones</td></tr>'}</table>
+    <div class="right" style="margin-top:14px">${s.estado === 'APROBADA' ? `<button class="btn" onclick="ocDesdeSolicitud(${id})">Generar orden de compra</button> ` : ''}<button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+}
+async function addCotiz(id) { if (!val('coTot')) { alert('Indique el total'); return; } await api('POST', '/compras/solicitudes/' + id + '/cotizaciones', { proveedor_id: val('coProv') || null, total: val('coTot'), plazo: val('coPlazo') }); verSolicitud(id); }
+async function selCotiz(cid, id) { await api('POST', '/compras/cotizaciones/' + cid + '/seleccionar', {}); verSolicitud(id); }
+async function delCotiz(cid, id) { await api('DELETE', '/compras/cotizaciones/' + cid); verSolicitud(id); }
+
+async function cmpOrdenes() {
+  const os = await api('GET', '/compras/ordenes');
+  $('#cmpBody').innerHTML = `<div class="card"><h3>Ordenes de compra <button class="btn" onclick="ocNueva()">+ Nueva OC</button></h3>
+    <div class="scroll"><table><tr><th>N&deg;</th><th>Fecha</th><th>Proveedor</th><th class="num">Total</th><th>Estado</th><th>Recepcion</th><th></th></tr>
+    ${os.length ? os.map(o => `<tr><td>${esc(o.numero)}</td><td>${fdate(o.fecha)}</td><td>${esc(o.proveedor||'')}</td><td class="num">${clp(o.total)}</td><td>${pillEstado(o.estado)}</td><td>${o.recibida}</td>
+      <td><button class="btn sm ghost" onclick="verOC(${o.id})">Ver</button> ${USER.rol === 'admin' && o.estado === 'PENDIENTE' ? `<button class="btn sm green" onclick="aprobOC(${o.id},1)">Aprobar</button> ` : ''}${(o.estado === 'APROBADA' || o.estado === 'RECIBIDA') && o.recibida !== 'TOTAL' ? `<button class="btn sm" onclick="recibirOC(${o.id})">Recibir</button> ` : ''}<button class="btn sm red" onclick="delOC(${o.id})">x</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin ordenes</td></tr>'}</table></div></div>`;
+}
+async function ocDesdeSolicitud(solId) {
+  const s = await api('GET', '/compras/solicitudes/' + solId);
+  const sel = (s.cotizaciones || []).find(c => c.seleccionada);
+  _items = s.items.map(i => ({ producto_id: i.producto_id || '', descripcion: i.descripcion || i.producto || '', cantidad: i.cantidad, precio_unitario: 0, unidad: i.unidad || '' }));
+  formOC({ solicitud_id: solId, proveedor_id: sel ? sel.proveedor_id : '', bodega_id: s.bodega_id });
+}
+function ocNueva() { _items = [{ producto_id: '', descripcion: '', cantidad: 1, precio_unitario: 0, unidad: '' }]; formOC({}); }
+async function formOC(pre) {
+  const [bods, prods, provs] = await Promise.all([api('GET', '/inventario/bodegas'), api('GET', '/inventario/productos'), api('GET', '/terceros?tipo=PROVEEDOR')]);
+  window._prodsCmp = prods;
+  modal(`<h3>Nueva orden de compra</h3>
+    <div class="row"><div class="field"><label>Proveedor</label><select id="ocProv"><option value="">--</option>${provs.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join('')}</select></div><div class="field"><label>Fecha</label><input id="ocF" type="date" value="${hoy()}"></div></div>
+    <div class="row"><div class="field"><label>Bodega recepcion</label><select id="ocBod"><option value="">--</option>${bods.map(b => `<option value="${b.id}">${esc(b.nombre)}</option>`).join('')}</select></div><div class="field" style="max-width:120px"><label>IVA %</label><input id="ocIva" type="number" value="19" oninput="ocCalc()"></div></div>
+    <div class="row"><div class="field"><label>Condicion de pago</label><input id="ocCond"></div><div class="field"><label>Glosa</label><input id="ocGlosa"></div></div>
+    <h4 style="margin:10px 0 4px">Items</h4><div id="ocItems"></div><button class="btn sm ghost" onclick="addOCRow()">+ Agregar item</button>
+    <p id="ocTotal" style="margin-top:8px;text-align:right"></p>
+    <div class="err" id="ocErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarOC(${pre.solicitud_id || 0})">Guardar</button></div>`);
+  if (pre.proveedor_id) document.getElementById('ocProv').value = pre.proveedor_id;
+  if (pre.bodega_id) document.getElementById('ocBod').value = pre.bodega_id;
+  renderOCRows();
+}
+function renderOCRows() {
+  const prods = window._prodsCmp || [];
+  document.getElementById('ocItems').innerHTML = _items.map((it, i) => `<div class="row" style="align-items:flex-end">
+    <div class="field"><label>Producto</label><select onchange="_items[${i}].producto_id=this.value"><option value="">-- libre --</option>${prods.map(p => `<option value="${p.id}" ${it.producto_id == p.id ? 'selected' : ''}>${esc(p.sku)} - ${esc(p.nombre)}</option>`).join('')}</select></div>
+    <div class="field"><label>Descripcion</label><input value="${esc(it.descripcion || '')}" oninput="_items[${i}].descripcion=this.value"></div>
+    <div class="field" style="max-width:80px"><label>Cant.</label><input type="number" value="${it.cantidad}" oninput="_items[${i}].cantidad=this.value;ocCalc()"></div>
+    <div class="field" style="max-width:120px"><label>Precio</label><input type="number" value="${it.precio_unitario}" oninput="_items[${i}].precio_unitario=this.value;ocCalc()"></div>
+    <button class="btn sm red" onclick="rmOCRow(${i})">x</button></div>`).join('');
+  ocCalc();
+}
+function ocCalc() { const neto = _items.reduce((a, it) => a + (Number(it.cantidad) || 0) * (Number(it.precio_unitario) || 0), 0); const iva = neto * (Number(val('ocIva')) || 0) / 100; const el = document.getElementById('ocTotal'); if (el) el.innerHTML = 'Neto ' + clp(neto) + ' · IVA ' + clp(iva) + ' · <b>Total ' + clp(neto + iva) + '</b>'; }
+function addOCRow() { _items.push({ producto_id: '', descripcion: '', cantidad: 1, precio_unitario: 0, unidad: '' }); renderOCRows(); }
+function rmOCRow(i) { _items.splice(i, 1); if (!_items.length) _items.push({ producto_id: '', descripcion: '', cantidad: 1, precio_unitario: 0, unidad: '' }); renderOCRows(); }
+async function guardarOC(solId) {
+  const items = _items.filter(it => (it.producto_id || it.descripcion) && Number(it.cantidad) > 0);
+  if (!items.length) { $('#ocErr').textContent = 'Agregue items'; return; }
+  try { await api('POST', '/compras/ordenes', { proveedor_id: val('ocProv') || null, fecha: val('ocF'), bodega_id: val('ocBod') || null, iva_pct: val('ocIva'), condicion_pago: val('ocCond'), glosa: val('ocGlosa'), solicitud_id: solId || null, items }); closeModal(); cmpTab = 'ordenes'; renderCmp(); } catch (e) { $('#ocErr').textContent = e.message; }
+}
+async function aprobOC(id, ap) { await api('POST', '/compras/ordenes/' + id + '/' + (ap ? 'aprobar' : 'rechazar'), {}); cmpOrdenes(); }
+async function delOC(id) { if (confirm('Eliminar OC?')) { await api('DELETE', '/compras/ordenes/' + id); cmpOrdenes(); } }
+async function verOC(id) {
+  const o = await api('GET', '/compras/ordenes/' + id);
+  modal(`<h3>Orden de compra #${esc(o.numero)} ${pillEstado(o.estado)}</h3>
+    <p class="muted">${fdate(o.fecha)} · ${esc(o.proveedor||'')} ${o.proveedor_rut ? '(' + esc(o.proveedor_rut) + ')' : ''} · ${esc(o.glosa||'')}</p>
+    ${o.solicitud ? `<p class="muted">Origen: Solicitud #${esc(o.solicitud.numero)}</p>` : ''}
+    <table><tr><th>Item</th><th class="num">Cant.</th><th class="num">Recibido</th><th class="num">Precio</th><th class="num">Subtotal</th></tr>
+    ${o.items.map(i => `<tr><td>${esc(i.producto || i.descripcion || '')}</td><td class="num">${num(i.cantidad,2)}</td><td class="num">${num(i.cantidad_recibida,2)}</td><td class="num">${clp(i.precio_unitario)}</td><td class="num">${clp(i.cantidad*i.precio_unitario)}</td></tr>`).join('')}</table>
+    <p style="text-align:right;margin-top:8px">Neto ${clp(o.neto)} · IVA ${clp(o.iva)} · <b>Total ${clp(o.total)}</b></p>
+    <p class="muted">Recepcion: <b>${o.recibida}</b>${o.factura ? ' · Factura CxP #' + esc(o.factura.numero) : ''}</p>
+    <div class="right" style="margin-top:10px">${(o.estado === 'APROBADA' || o.estado === 'RECIBIDA') && o.recibida !== 'TOTAL' ? `<button class="btn green" onclick="recibirOC(${id})">Recibir</button> ` : ''}${o.recibida !== 'NO' && !o.factura_id ? `<button class="btn" onclick="facturarOC(${id})">Generar factura CxP</button> ` : ''}<button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+}
+async function recibirOC(id) {
+  const o = await api('GET', '/compras/ordenes/' + id); window._ocRec = o;
+  const bods = await api('GET', '/inventario/bodegas');
+  modal(`<h3>Recepcion OC #${esc(o.numero)}</h3>
+    <div class="row"><div class="field"><label>Bodega recepcion</label><select id="rcBod">${bods.map(b => `<option value="${b.id}" ${o.bodega_id == b.id ? 'selected' : ''}>${esc(b.nombre)}</option>`).join('')}</select></div><div class="field"><label>Fecha</label><input id="rcF" type="date" value="${hoy()}"></div></div>
+    <table><tr><th>Item</th><th class="num">Pendiente</th><th class="num">Recibir ahora</th></tr>
+    ${o.items.map(i => { const pend = i.cantidad - i.cantidad_recibida; return `<tr><td>${esc(i.producto || i.descripcion || '')}</td><td class="num">${num(pend,2)}</td><td class="num"><input id="rc_${i.id}" type="number" value="${pend > 0 ? pend : 0}" style="max-width:90px"></td></tr>`; }).join('')}</table>
+    <p class="muted">Los items con producto entran al stock de la bodega (ENTRADA con PMP).</p>
+    <div class="err" id="rcErr"></div>
+    <div class="right" style="margin-top:10px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn green" onclick="confirmarRecepcion(${id})">Confirmar recepcion</button></div>`);
+}
+async function confirmarRecepcion(id) {
+  const o = window._ocRec; const items = o.items.map(i => ({ oc_item_id: i.id, cantidad: Number(document.getElementById('rc_' + i.id).value) || 0 })).filter(x => x.cantidad > 0);
+  if (!items.length) { $('#rcErr').textContent = 'Indique cantidades a recibir'; return; }
+  try { await api('POST', '/compras/ordenes/' + id + '/recibir', { bodega_id: val('rcBod'), fecha: val('rcF'), items }); closeModal(); cmpOrdenes(); } catch (e) { $('#rcErr').textContent = e.message; }
+}
+async function facturarOC(id) {
+  const venc = prompt('Fecha de vencimiento de la factura (AAAA-MM-DD):', hoy()); if (!venc) return;
+  try { await api('POST', '/compras/ordenes/' + id + '/facturar', { fecha_vencimiento: venc }); alert('Factura por pagar creada en Cuentas C/P.'); cmpOrdenes(); } catch (e) { alert(e.message); }
+}
 
 
 // ===================== AUDITORIA (historial) =====================
