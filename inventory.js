@@ -173,6 +173,12 @@ router.get('/valorizado', (req, res) => {
   res.json({ items: rows, total });
 });
 
+// Stock critico (productos en o bajo el minimo)
+router.get('/stock-critico', (req, res) => {
+  res.json(db.prepare(`SELECT id, sku, nombre, unidad, stock, stock_minimo, costo_promedio,
+    (stock*costo_promedio) AS valor FROM productos WHERE empresa=? AND activo=1 AND stock <= stock_minimo ORDER BY nombre`).all(req.empresa));
+});
+
 // Stock por bodega
 router.get('/stock-bodega', (req, res) => {
   const rows = db.prepare(`SELECT p.sku, p.nombre AS producto, b.nombre AS bodega,

@@ -15,6 +15,10 @@ app.use('/api/auditoria', require('./auditoria'));
 app.use('/api/facturas', require('./facturas'));
 app.use('/api/colaboradores', require('./colaboradores'));
 app.use('/api/entregas', require('./entregas'));
+app.use('/api/terceros', require('./terceros'));
+app.use('/api/maquinarias', require('./maquinarias'));
+app.use('/api/garantias', require('./garantias'));
+app.use('/api/cajachica', require('./cajachica'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 

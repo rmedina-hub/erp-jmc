@@ -55,11 +55,11 @@ async function doLogin(e) {
 function logout() { TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', usuarios: 'Usuarios', auditoria: 'Auditoria' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria' };
 function go(v) {
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, usuarios: vUsuarios, auditoria: vAuditoria }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
 
@@ -100,6 +100,7 @@ async function vInventario() {
   C().innerHTML = `<div class="tabs">
       <button data-t="valorizado">Inventario valorizado</button>
       <button data-t="movimientos">Movimientos / Kardex</button>
+      <button data-t="critico">Stock critico</button>
       <button data-t="entregas">Entregas</button>
       <button data-t="productos">Productos</button>
       <button data-t="colaboradores">Colaboradores</button>
@@ -110,7 +111,7 @@ async function vInventario() {
 }
 function renderInvTabs() {
   C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === invTab));
-  ({ valorizado: invValorizado, movimientos: invMovimientos, entregas: invEntregas, productos: invProductos, colaboradores: invColaboradores, bodegas: invBodegas }[invTab] || invValorizado)();
+  ({ valorizado: invValorizado, movimientos: invMovimientos, critico: invStockCritico, entregas: invEntregas, productos: invProductos, colaboradores: invColaboradores, bodegas: invBodegas }[invTab] || invValorizado)();
 }
 async function invValorizado() {
   const d = await api('GET', '/inventario/valorizado');
@@ -590,11 +591,14 @@ function formActivo() {
     <div class="row"><div class="field"><label>Patente</label><input id="aPat"></div><div class="field"><label>Valor compra</label><input id="aValor" type="number"></div></div>
     <div class="row"><div class="field"><label>Marca</label><input id="aMarca"></div><div class="field"><label>Modelo</label><input id="aMod"></div></div>
     <div class="row"><div class="field"><label>Fecha compra</label><input id="aFecha" type="date"></div></div>
+    <div class="row"><div class="field"><label><input type="checkbox" id="aDep"> Depreciable</label></div>
+      <div class="field"><label>Vida util (meses)</label><input id="aVida" type="number" value="0"></div>
+      <div class="field"><label>Valor residual</label><input id="aResid" type="number" value="0"></div></div>
     <div class="err" id="aErr"></div>
     <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarActivo()">Guardar</button></div>`);
 }
 async function guardarActivo() {
-  try { await api('POST', '/activos', { codigo: val('aCod'), nombre: val('aNom'), categoria: val('aCat'), estado: val('aEstado'), proveedor: val('aProv'), factura: val('aFact'), patente: val('aPat'), marca: val('aMarca'), modelo: val('aMod'), fecha_compra: val('aFecha'), valor_compra: val('aValor') }); closeModal(); actLista(); }
+  try { await api('POST', '/activos', { codigo: val('aCod'), nombre: val('aNom'), categoria: val('aCat'), estado: val('aEstado'), proveedor: val('aProv'), factura: val('aFact'), patente: val('aPat'), marca: val('aMarca'), modelo: val('aMod'), fecha_compra: val('aFecha'), valor_compra: val('aValor'), depreciable: document.getElementById('aDep') && document.getElementById('aDep').checked ? 1 : 0, vida_util_meses: val('aVida'), valor_residual: val('aResid') }); closeModal(); actLista(); }
   catch (e) { $('#aErr').textContent = e.message; }
 }
 async function editarActivo(id) {
@@ -621,10 +625,12 @@ async function verActivo(id) {
   const a = await api('GET', '/activos/' + id);
   modal(`<h3>${esc(a.nombre)} <span class="muted">${esc(a.codigo)} · ${esc(a.patente||'')}</span></h3>
     <p class="muted" style="margin-top:-6px">${estadoPillActivo(a.estado)} · ${esc(a.categoria||'')} · Valor ${clp(a.valor_compra)}${a.proveedor?' · Prov: '+esc(a.proveedor):''}${a.factura?' · Factura '+esc(a.factura):''}</p>
+    <div id="aDepr" class="muted" style="font-size:12px;margin-top:-4px"></div>
     <div class="tabs"><button class="active" onclick="actSub(event,'km',${id})">Kilometrajes</button><button onclick="actSub(event,'seg',${id})">Seguros</button><button onclick="actSub(event,'doc',${id})">Documentos</button></div>
     <div id="aSub"></div>
     <div class="right" style="margin-top:14px"><button class="btn red" onclick="delActivo(${id})">Eliminar</button> <button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
   window._activo = a; renderSub('km', id);
+  if (a.depreciable) { api('GET', '/activos/' + id + '/depreciacion').then(d => { const el = document.getElementById('aDepr'); if (el && d.depreciable) el.innerHTML = 'Depreciacion lineal: ' + clp(d.depreciacion_mensual) + '/mes &middot; acumulada ' + clp(d.depreciacion_acumulada) + ' (' + d.meses_transcurridos + ' meses) &middot; <b>valor libro ' + clp(d.valor_libro) + '</b>'; }).catch(() => {}); }
 }
 function actSub(e, t, id) { e.target.parentNode.querySelectorAll('button').forEach(b => b.classList.remove('active')); e.target.classList.add('active'); renderSub(t, id); }
 async function renderSub(t, id) {
@@ -905,6 +911,121 @@ async function importarFac() {
     facLista();
   } catch (e) { $('#fiErr').textContent = e.message; }
 }
+
+// ===================== STOCK CRITICO =====================
+async function invStockCritico() {
+  const rows = await api('GET', '/inventario/stock-critico');
+  $('#invBody').innerHTML = `<div class="card"><h3>Stock critico</h3>
+    <p class="muted">Productos en o bajo el stock minimo. Conviene reponer / generar solicitud de compra.</p>
+    <div class="scroll"><table><tr><th>SKU</th><th>Producto</th><th class="num">Stock</th><th class="num">Stock min</th><th class="num">PMP</th></tr>
+    ${rows.length ? rows.map(p => `<tr style="background:#fff5f5"><td>${esc(p.sku)}</td><td>${esc(p.nombre)}</td><td class="num" style="color:var(--rojo);font-weight:600">${num(p.stock,2)}</td><td class="num">${num(p.stock_minimo,2)}</td><td class="num">${clp(p.costo_promedio)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin productos bajo el minimo</td></tr>'}</table></div></div>`;
+}
+
+// ===================== PROVEEDORES Y CLIENTES =====================
+let terTipo = '';
+async function vTerceros() {
+  const ts = await api('GET', '/terceros' + (terTipo ? '?tipo=' + terTipo : '')); window._terceros = ts;
+  C().innerHTML = `<div class="card"><h3>Proveedores y clientes <button class="btn" onclick="formTercero()">+ Nuevo</button></h3>
+    <div class="row"><div class="field" style="max-width:220px"><label>Filtrar</label><select id="terF" onchange="terTipo=this.value;vTerceros()"><option value="">Todos</option><option value="PROVEEDOR">Proveedores</option><option value="CLIENTE">Clientes</option></select></div></div>
+    <div class="scroll"><table><tr><th>Tipo</th><th>RUT</th><th>Nombre / Razon social</th><th>Giro</th><th>Contacto</th><th>Email</th><th>Telefono</th><th></th></tr>
+    ${ts.length ? ts.map(t => `<tr><td>${esc(t.tipo)}</td><td>${esc(t.rut||'')}</td><td>${esc(t.nombre)}</td><td>${esc(t.giro||'')}</td><td>${esc(t.contacto||'')}</td><td>${esc(t.email||'')}</td><td>${esc(t.telefono||'')}</td><td><button class="btn sm ghost" onclick="editarTercero(${t.id})">Editar</button> <button class="btn sm red" onclick="delTercero(${t.id})">x</button></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Sin registros</td></tr>'}</table></div></div>`;
+  document.getElementById('terF').value = terTipo;
+}
+function editarTercero(id) { formTercero((window._terceros || []).find(x => x.id === id)); }
+function formTercero(t) {
+  modal(`<h3>${t ? 'Editar' : 'Nuevo'} proveedor / cliente</h3>
+    <div class="row"><div class="field"><label>Tipo</label><select id="tTipo"><option value="PROVEEDOR">Proveedor</option><option value="CLIENTE">Cliente</option><option value="AMBOS">Ambos</option></select></div><div class="field"><label>RUT</label><input id="tRut" value="${t ? esc(t.rut || '') : ''}"></div></div>
+    <div class="row"><div class="field"><label>Nombre / Razon social</label><input id="tNom" value="${t ? esc(t.nombre) : ''}"></div><div class="field"><label>Giro</label><input id="tGiro" value="${t ? esc(t.giro || '') : ''}"></div></div>
+    <div class="row"><div class="field"><label>Contacto</label><input id="tCont" value="${t ? esc(t.contacto || '') : ''}"></div><div class="field"><label>Email</label><input id="tEmail" value="${t ? esc(t.email || '') : ''}"></div></div>
+    <div class="row"><div class="field"><label>Telefono</label><input id="tTel" value="${t ? esc(t.telefono || '') : ''}"></div><div class="field"><label>Direccion</label><input id="tDir" value="${t ? esc(t.direccion || '') : ''}"></div></div>
+    <div class="err" id="tErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarTercero(${t ? t.id : 0})">Guardar</button></div>`);
+  if (t) document.getElementById('tTipo').value = t.tipo;
+}
+async function guardarTercero(id) {
+  const body = { tipo: val('tTipo'), rut: val('tRut'), nombre: val('tNom'), giro: val('tGiro'), contacto: val('tCont'), email: val('tEmail'), telefono: val('tTel'), direccion: val('tDir') };
+  try { if (id) await api('PUT', '/terceros/' + id, body); else await api('POST', '/terceros', body); closeModal(); vTerceros(); } catch (e) { $('#tErr').textContent = e.message; }
+}
+async function delTercero(id) { if (confirm('Eliminar?')) { await api('DELETE', '/terceros/' + id); vTerceros(); } }
+
+// ===================== ARRIENDO DE MAQUINARIAS =====================
+async function vMaquinarias() {
+  const [ms, provs] = await Promise.all([api('GET', '/maquinarias'), api('GET', '/terceros?tipo=PROVEEDOR')]); window._maqs = ms; window._provsMaq = provs;
+  C().innerHTML = `<div class="card"><h3>Arriendo de maquinarias <button class="btn" onclick="formMaq()">+ Nuevo arriendo</button></h3>
+    <div class="scroll"><table><tr><th>Maquina</th><th>Proveedor</th><th>Inicio</th><th>Fin</th><th>Periodo</th><th class="num">Costo</th><th>Obra</th><th>Estado</th><th></th></tr>
+    ${ms.length ? ms.map(m => `<tr><td>${esc(m.maquina)}</td><td>${esc(m.proveedor||'')}</td><td>${fdate(m.fecha_inicio)}</td><td>${fdate(m.fecha_fin)}</td><td>${esc(m.periodo)}</td><td class="num">${clp(m.costo_periodo)}</td><td>${esc(m.obra||'')}</td><td>${m.estado === 'DEVUELTA' ? '<span class="pill ok">DEVUELTA</span>' : '<span class="pill warn">VIGENTE</span>'}</td><td>${m.estado !== 'DEVUELTA' ? `<button class="btn sm green" onclick="devolverMaq(${m.id})">Devolver</button> ` : ''}<button class="btn sm ghost" onclick="editarMaq(${m.id})">Editar</button> <button class="btn sm red" onclick="delMaq(${m.id})">x</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin arriendos</td></tr>'}</table></div></div>`;
+}
+function editarMaq(id) { formMaq((window._maqs || []).find(x => x.id === id)); }
+function formMaq(m) {
+  const provs = window._provsMaq || [];
+  modal(`<h3>${m ? 'Editar' : 'Nuevo'} arriendo de maquinaria</h3>
+   <div class="row"><div class="field"><label>Maquina</label><input id="mMaq" value="${m ? esc(m.maquina) : ''}"></div><div class="field"><label>Proveedor</label><select id="mProv"><option value="">--</option>${provs.map(p => `<option value="${p.id}">${esc(p.nombre)}</option>`).join('')}</select></div></div>
+   <div class="row"><div class="field"><label>Inicio</label><input id="mIni" type="date" value="${m && m.fecha_inicio ? fdate(m.fecha_inicio) : ''}"></div><div class="field"><label>Fin</label><input id="mFin" type="date" value="${m && m.fecha_fin ? fdate(m.fecha_fin) : ''}"></div></div>
+   <div class="row"><div class="field"><label>Periodo</label><select id="mPer"><option>MES</option><option>SEMANA</option><option>DIA</option></select></div><div class="field"><label>Costo por periodo</label><input id="mCost" type="number" value="${m ? m.costo_periodo : ''}"></div></div>
+   <div class="row"><div class="field"><label>Obra</label><input id="mObra" value="${m ? esc(m.obra || '') : ''}"></div><div class="field"><label>Glosa</label><input id="mGlosa" value="${m ? esc(m.glosa || '') : ''}"></div></div>
+   <div class="err" id="mErr"></div>
+   <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarMaq(${m ? m.id : 0})">Guardar</button></div>`);
+  if (m) { if (m.proveedor_id) document.getElementById('mProv').value = m.proveedor_id; document.getElementById('mPer').value = m.periodo || 'MES'; }
+}
+async function guardarMaq(id) {
+  const body = { maquina: val('mMaq'), proveedor_id: val('mProv') || null, fecha_inicio: val('mIni'), fecha_fin: val('mFin'), periodo: val('mPer'), costo_periodo: val('mCost'), obra: val('mObra'), glosa: val('mGlosa') };
+  try { if (id) await api('PUT', '/maquinarias/' + id, body); else await api('POST', '/maquinarias', body); closeModal(); vMaquinarias(); } catch (e) { $('#mErr').textContent = e.message; }
+}
+async function devolverMaq(id) { await api('POST', '/maquinarias/' + id + '/devolver', {}); vMaquinarias(); }
+async function delMaq(id) { if (confirm('Eliminar?')) { await api('DELETE', '/maquinarias/' + id); vMaquinarias(); } }
+
+// ===================== BOLETAS DE GARANTIA =====================
+async function vGarantias() {
+  const gs = await api('GET', '/garantias'); window._gar = gs;
+  C().innerHTML = `<div class="card"><h3>Boletas de garantia <button class="btn" onclick="formGar()">+ Nueva boleta</button></h3>
+    <div class="scroll"><table><tr><th>Tipo</th><th>N&deg;</th><th>Banco</th><th>Beneficiario</th><th>Glosa/Obra</th><th class="num">Monto</th><th>Emision</th><th>Vence</th><th>Estado</th><th></th></tr>
+    ${gs.length ? gs.map(g => `<tr><td>${esc(g.tipo)}</td><td>${esc(g.numero||'')}</td><td>${esc(g.banco||'')}</td><td>${esc(g.beneficiario||'')}</td><td>${esc(g.glosa||'')}</td><td class="num">${clp(g.monto)}</td><td>${fdate(g.fecha_emision)}</td><td>${fdate(g.fecha_vencimiento)} ${g.fecha_vencimiento && g.estado === 'VIGENTE' ? venceBadge(g.fecha_vencimiento) : ''}</td><td>${g.estado}</td><td><button class="btn sm ghost" onclick="editarGar(${g.id})">Editar</button> <button class="btn sm red" onclick="delGar(${g.id})">x</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Sin boletas</td></tr>'}</table></div></div>`;
+}
+function editarGar(id) { formGar((window._gar || []).find(x => x.id === id)); }
+function formGar(g) {
+  modal(`<h3>${g ? 'Editar' : 'Nueva'} boleta de garantia</h3>
+   <div class="row"><div class="field"><label>Tipo</label><select id="gTipo"><option value="EMITIDA">Emitida (la entregamos)</option><option value="RECIBIDA">Recibida (nos la dejaron)</option></select></div><div class="field"><label>N&deg; boleta</label><input id="gNum" value="${g ? esc(g.numero || '') : ''}"></div></div>
+   <div class="row"><div class="field"><label>Banco</label><input id="gBanco" value="${g ? esc(g.banco || '') : ''}"></div><div class="field"><label>Beneficiario</label><input id="gBen" value="${g ? esc(g.beneficiario || '') : ''}"></div></div>
+   <div class="row"><div class="field"><label>Glosa / Obra</label><input id="gGlosa" value="${g ? esc(g.glosa || '') : ''}"></div><div class="field"><label>Monto</label><input id="gMonto" type="number" value="${g ? g.monto : ''}"></div></div>
+   <div class="row"><div class="field"><label>Emision</label><input id="gEmi" type="date" value="${g && g.fecha_emision ? fdate(g.fecha_emision) : ''}"></div><div class="field"><label>Vencimiento</label><input id="gVen" type="date" value="${g && g.fecha_vencimiento ? fdate(g.fecha_vencimiento) : ''}"></div></div>
+   ${g ? `<div class="row"><div class="field"><label>Estado</label><select id="gEstado"><option>VIGENTE</option><option>COBRADA</option><option>DEVUELTA</option><option>VENCIDA</option></select></div></div>` : ''}
+   <div class="err" id="gErr"></div>
+   <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarGar(${g ? g.id : 0})">Guardar</button></div>`);
+  if (g) { document.getElementById('gTipo').value = g.tipo; if (document.getElementById('gEstado')) document.getElementById('gEstado').value = g.estado; }
+}
+async function guardarGar(id) {
+  const body = { tipo: val('gTipo'), numero: val('gNum'), banco: val('gBanco'), beneficiario: val('gBen'), glosa: val('gGlosa'), monto: val('gMonto'), fecha_emision: val('gEmi'), fecha_vencimiento: val('gVen') };
+  if (id) body.estado = val('gEstado');
+  try { if (id) await api('PUT', '/garantias/' + id, body); else await api('POST', '/garantias', body); closeModal(); vGarantias(); } catch (e) { $('#gErr').textContent = e.message; }
+}
+async function delGar(id) { if (confirm('Eliminar?')) { await api('DELETE', '/garantias/' + id); vGarantias(); } }
+
+// ===================== CAJA CHICA =====================
+async function vCajaChica() {
+  const cs = await api('GET', '/cajachica'); window._cajas = cs;
+  C().innerHTML = `<div class="card"><h3>Caja chica <button class="btn" onclick="formCaja()">+ Nueva caja</button></h3>
+    <table><tr><th>Caja</th><th>Responsable</th><th class="num">Asignado</th><th class="num">Gastos</th><th class="num">Saldo</th><th></th></tr>
+    ${cs.length ? cs.map(c => `<tr><td>${esc(c.nombre)}</td><td>${esc(c.responsable||'')}</td><td class="num">${clp(c.monto_asignado)}</td><td class="num">${clp(c.total_gastos)}</td><td class="num"><b>${clp(c.saldo)}</b></td><td><button class="btn sm" onclick="verCaja(${c.id})">Movimientos</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin cajas</td></tr>'}</table></div>`;
+}
+function formCaja() {
+  modal(`<h3>Nueva caja chica</h3><div class="row"><div class="field"><label>Nombre</label><input id="kkNom"></div><div class="field"><label>Responsable</label><input id="kkResp"></div></div><div class="row"><div class="field"><label>Monto asignado</label><input id="kkMonto" type="number" value="0"></div></div><div class="err" id="kkErr"></div><div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarCaja()">Guardar</button></div>`);
+}
+async function guardarCaja() { try { await api('POST', '/cajachica', { nombre: val('kkNom'), responsable: val('kkResp'), monto_asignado: val('kkMonto') }); closeModal(); vCajaChica(); } catch (e) { $('#kkErr').textContent = e.message; } }
+async function verCaja(id) {
+  const mv = await api('GET', '/cajachica/' + id + '/movimientos'); const caja = (window._cajas || []).find(x => x.id === id) || {};
+  modal(`<h3>Caja chica: ${esc(caja.nombre || '')}</h3>
+    <p class="muted">Asignado ${clp(caja.monto_asignado || 0)} &middot; Saldo <b>${clp(caja.saldo || 0)}</b></p>
+    <div class="row"><div class="field"><label>Tipo</label><select id="mvTipo"><option value="GASTO">Gasto</option><option value="REPOSICION">Reposicion</option></select></div><div class="field"><label>Fecha</label><input id="mvF" type="date" value="${hoy()}"></div></div>
+    <div class="row"><div class="field"><label>Monto</label><input id="mvMonto" type="number"></div><div class="field"><label>Categoria</label><input id="mvCat"></div></div>
+    <div class="row"><div class="field"><label>Glosa</label><input id="mvGlosa"></div><div class="field"><label>Documento</label><input id="mvDoc"></div></div>
+    <div class="right" style="margin-bottom:10px"><button class="btn" onclick="addCajaMov(${id})">+ Agregar movimiento</button></div>
+    <div class="scroll" style="max-height:240px"><table><tr><th>Fecha</th><th>Tipo</th><th>Glosa</th><th>Doc</th><th class="num">Monto</th><th></th></tr>
+    ${mv.length ? mv.map(m => `<tr><td>${fdate(m.fecha)}</td><td>${m.tipo}</td><td>${esc(m.glosa||'')}</td><td>${esc(m.documento||'')}</td><td class="num">${clp(m.monto)}</td><td><button class="btn sm red" onclick="delCajaMov(${m.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin movimientos</td></tr>'}</table></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+}
+async function addCajaMov(id) { try { await api('POST', '/cajachica/' + id + '/movimientos', { tipo: val('mvTipo'), fecha: val('mvF'), monto: val('mvMonto'), categoria: val('mvCat'), glosa: val('mvGlosa'), documento: val('mvDoc') }); await vCajaChica(); verCaja(id); } catch (e) { alert(e.message); } }
+async function delCajaMov(mid, id) { if (confirm('Eliminar movimiento?')) { await api('DELETE', '/cajachica/movimientos/' + mid); await vCajaChica(); verCaja(id); } }
+
 
 // ===================== AUDITORIA (historial) =====================
 const AUDIT_MODS = ['Sesion', 'Inventario', 'Tesoreria', 'Creditos', 'Activos', 'Flujo', 'Usuarios'];

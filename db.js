@@ -115,6 +115,60 @@ CREATE TABLE IF NOT EXISTS entregas (
   fecha_entrega TEXT NOT NULL, estado TEXT NOT NULL DEFAULT 'ENTREGADO', fecha_devolucion TEXT,
   movimiento_id INTEGER, glosa TEXT, usuario_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')));
 
+CREATE TABLE IF NOT EXISTS terceros (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, tipo TEXT NOT NULL DEFAULT 'PROVEEDOR',
+  rut TEXT, nombre TEXT NOT NULL, giro TEXT, contacto TEXT, email TEXT, telefono TEXT, direccion TEXT,
+  activo INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS solicitudes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, numero TEXT, fecha TEXT NOT NULL,
+  solicitante TEXT, bodega_id INTEGER, glosa TEXT, estado TEXT NOT NULL DEFAULT 'PENDIENTE',
+  aprobada_por TEXT, fecha_aprob TEXT, usuario_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS solicitud_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, solicitud_id INTEGER NOT NULL REFERENCES solicitudes(id) ON DELETE CASCADE,
+  producto_id INTEGER, descripcion TEXT, cantidad REAL NOT NULL DEFAULT 0, unidad TEXT);
+
+CREATE TABLE IF NOT EXISTS cotizaciones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, solicitud_id INTEGER, proveedor_id INTEGER,
+  fecha TEXT, total REAL NOT NULL DEFAULT 0, plazo TEXT, glosa TEXT, seleccionada INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS ordenes_compra (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, numero TEXT, fecha TEXT NOT NULL,
+  proveedor_id INTEGER, solicitud_id INTEGER, cotizacion_id INTEGER, bodega_id INTEGER, glosa TEXT,
+  neto REAL NOT NULL DEFAULT 0, iva REAL NOT NULL DEFAULT 0, total REAL NOT NULL DEFAULT 0,
+  condicion_pago TEXT, estado TEXT NOT NULL DEFAULT 'PENDIENTE', recibida TEXT NOT NULL DEFAULT 'NO',
+  factura_id INTEGER, aprobada_por TEXT, fecha_aprob TEXT, usuario_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS oc_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, oc_id INTEGER NOT NULL REFERENCES ordenes_compra(id) ON DELETE CASCADE,
+  producto_id INTEGER, descripcion TEXT, cantidad REAL NOT NULL DEFAULT 0, precio_unitario REAL NOT NULL DEFAULT 0,
+  cantidad_recibida REAL NOT NULL DEFAULT 0, unidad TEXT);
+
+CREATE TABLE IF NOT EXISTS arriendos_maquinaria (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, maquina TEXT NOT NULL, proveedor_id INTEGER,
+  fecha_inicio TEXT, fecha_fin TEXT, periodo TEXT DEFAULT 'MES', costo_periodo REAL NOT NULL DEFAULT 0,
+  obra TEXT, estado TEXT NOT NULL DEFAULT 'VIGENTE', fecha_devolucion TEXT, glosa TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS boletas_garantia (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, tipo TEXT NOT NULL DEFAULT 'EMITIDA',
+  numero TEXT, banco TEXT, beneficiario TEXT, glosa TEXT, monto REAL NOT NULL DEFAULT 0,
+  fecha_emision TEXT, fecha_vencimiento TEXT, estado TEXT NOT NULL DEFAULT 'VIGENTE',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS caja_chica (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, nombre TEXT NOT NULL, responsable TEXT,
+  monto_asignado REAL NOT NULL DEFAULT 0, activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS caja_chica_mov (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, caja_id INTEGER NOT NULL REFERENCES caja_chica(id) ON DELETE CASCADE,
+  empresa TEXT, fecha TEXT NOT NULL, tipo TEXT NOT NULL DEFAULT 'GASTO', categoria TEXT, glosa TEXT,
+  documento TEXT, monto REAL NOT NULL DEFAULT 0, usuario_id INTEGER, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
 CREATE TABLE IF NOT EXISTS auditoria (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT (datetime('now')),
   usuario_id INTEGER, usuario_nombre TEXT, usuario_email TEXT, rol TEXT, empresa TEXT,
@@ -148,7 +202,10 @@ const ADD_COLS = [
   "ALTER TABLE activo_documentos ADD COLUMN empresa TEXT",
   "ALTER TABLE flujo_proyeccion ADD COLUMN empresa TEXT",
   "ALTER TABLE bodegas ADD COLUMN tipo TEXT",
-  "ALTER TABLE usuarios ADD COLUMN bodega_id INTEGER"
+  "ALTER TABLE usuarios ADD COLUMN bodega_id INTEGER",
+  "ALTER TABLE activos ADD COLUMN vida_util_meses INTEGER DEFAULT 0",
+  "ALTER TABLE activos ADD COLUMN valor_residual REAL DEFAULT 0",
+  "ALTER TABLE activos ADD COLUMN depreciable INTEGER DEFAULT 0"
 ];
 for (const sql of ADD_COLS) { try { db.exec(sql); } catch (e) {} }
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_auditoria_emp_ts ON auditoria(empresa, ts)'); } catch (e) {}
@@ -156,6 +213,11 @@ try { db.exec('CREATE INDEX IF NOT EXISTS ix_facturas_emp ON facturas(empresa, e
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_archivos_ent ON archivos(entidad, entidad_id)'); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_entregas_emp ON entregas(empresa, bodega_id, estado)'); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_colab_emp ON colaboradores(empresa)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_terceros_emp ON terceros(empresa, tipo)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_solic_emp ON solicitudes(empresa, estado)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_oc_emp ON ordenes_compra(empresa, estado)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_garantias_emp ON boletas_garantia(empresa, estado)'); } catch (e) {}
+try { db.exec('CREATE INDEX IF NOT EXISTS ix_cajamov_emp ON caja_chica_mov(empresa, caja_id)'); } catch (e) {}
 
 // ---- Backfill: todos los datos preexistentes (empresa NULL) pasan a JMC ----
 const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancarias', 'tes_movimientos',

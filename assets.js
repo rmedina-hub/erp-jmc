@@ -23,8 +23,8 @@ router.post('/', (req, res) => {
   const b = req.body;
   if (!b.codigo || !b.nombre) return res.status(400).json({ error: 'codigo y nombre requeridos' });
   try {
-    const r = db.prepare(`INSERT INTO activos (codigo,nombre,categoria,marca,modelo,patente,fecha_compra,valor_compra,proveedor,factura,estado,empresa)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(b.codigo, b.nombre, b.categoria || null, b.marca || null, b.modelo || null, b.patente || null, b.fecha_compra || null, Number(b.valor_compra) || 0, b.proveedor || null, b.factura || null, b.estado || 'EN_USO', req.empresa);
+    const r = db.prepare(`INSERT INTO activos (codigo,nombre,categoria,marca,modelo,patente,fecha_compra,valor_compra,proveedor,factura,estado,empresa,depreciable,vida_util_meses,valor_residual)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(b.codigo, b.nombre, b.categoria || null, b.marca || null, b.modelo || null, b.patente || null, b.fecha_compra || null, Number(b.valor_compra) || 0, b.proveedor || null, b.factura || null, b.estado || 'EN_USO', req.empresa, b.depreciable ? 1 : 0, Number(b.vida_util_meses) || 0, Number(b.valor_residual) || 0);
     audit(req, 'Activos', 'Crear activo', (b.codigo || '') + ' - ' + (b.nombre || ''));
     res.json(db.prepare('SELECT * FROM activos WHERE id=?').get(r.lastInsertRowid));
   } catch (e) { res.status(400).json({ error: 'codigo duplicado' }); }
@@ -32,11 +32,12 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const b = req.body; const a = activoDeEmpresa(req.params.id, req.empresa);
   if (!a) return res.status(404).json({ error: 'No existe' });
-  db.prepare(`UPDATE activos SET codigo=?,nombre=?,categoria=?,marca=?,modelo=?,patente=?,fecha_compra=?,valor_compra=?,proveedor=?,factura=?,estado=? WHERE id=? AND empresa=?`)
+  db.prepare(`UPDATE activos SET codigo=?,nombre=?,categoria=?,marca=?,modelo=?,patente=?,fecha_compra=?,valor_compra=?,proveedor=?,factura=?,estado=?,depreciable=?,vida_util_meses=?,valor_residual=? WHERE id=? AND empresa=?`)
     .run(b.codigo != null ? b.codigo : a.codigo, b.nombre != null ? b.nombre : a.nombre, b.categoria != null ? b.categoria : a.categoria,
       b.marca != null ? b.marca : a.marca, b.modelo != null ? b.modelo : a.modelo, b.patente != null ? b.patente : a.patente,
       b.fecha_compra != null ? b.fecha_compra : a.fecha_compra, b.valor_compra != null ? Number(b.valor_compra) : a.valor_compra,
-      b.proveedor != null ? b.proveedor : a.proveedor, b.factura != null ? b.factura : a.factura, b.estado || a.estado, req.params.id, req.empresa);
+      b.proveedor != null ? b.proveedor : a.proveedor, b.factura != null ? b.factura : a.factura, b.estado || a.estado,
+      b.depreciable != null ? (b.depreciable ? 1 : 0) : a.depreciable, b.vida_util_meses != null ? Number(b.vida_util_meses) : a.vida_util_meses, b.valor_residual != null ? Number(b.valor_residual) : a.valor_residual, req.params.id, req.empresa);
   audit(req, 'Activos', 'Editar activo', (a.codigo || '') + ' - ' + (b.nombre != null ? b.nombre : a.nombre));
   res.json(db.prepare('SELECT * FROM activos WHERE id=?').get(req.params.id));
 });
@@ -57,6 +58,23 @@ router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM activos WHERE id=?').run(req.params.id);
   audit(req, 'Activos', 'Eliminar activo', (a.codigo || '') + ' - ' + (a.nombre || ''));
   res.json({ ok: true });
+});
+
+// ---------- Depreciacion (lineal) ----------
+router.get('/:id/depreciacion', (req, res) => {
+  const a = activoDeEmpresa(req.params.id, req.empresa);
+  if (!a) return res.status(404).json({ error: 'No existe' });
+  const n = Number(a.vida_util_meses) || 0;
+  const base = (Number(a.valor_compra) || 0) - (Number(a.valor_residual) || 0);
+  if (!a.depreciable || n <= 0 || base <= 0) return res.json({ depreciable: false, valor_compra: a.valor_compra, valor_libro: a.valor_compra });
+  const mensual = base / n;
+  let meses = 0;
+  if (a.fecha_compra) { const d0 = new Date(a.fecha_compra + 'T00:00:00'); const hoy = new Date();
+    meses = (hoy.getFullYear() - d0.getFullYear()) * 12 + (hoy.getMonth() - d0.getMonth()); if (meses < 0) meses = 0; if (meses > n) meses = n; }
+  const acumulada = Math.round(mensual * meses);
+  const valor_libro = Math.round((Number(a.valor_compra) || 0) - acumulada);
+  res.json({ depreciable: true, vida_util_meses: n, valor_compra: a.valor_compra, valor_residual: a.valor_residual,
+    depreciacion_mensual: Math.round(mensual), meses_transcurridos: meses, depreciacion_acumulada: acumulada, valor_libro });
 });
 
 // ---------- Kilometrajes ----------
