@@ -7,6 +7,7 @@ const clp = (n) => new Intl.NumberFormat('es-CL', { style: 'currency', currency:
 const num = (n, d = 2) => new Intl.NumberFormat('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d }).format(n || 0);
 const fdate = (s) => s ? s.slice(0, 10) : '';
 const hoy = () => new Date().toISOString().slice(0, 10);
+const inicioMes = () => hoy().slice(0, 8) + '01';
 const esc = (s) => (s == null ? '' : String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
 
 function activeEmpresa() {
@@ -72,7 +73,7 @@ async function vDashboard() {
     api('GET', '/tesoreria/cuentas'),
     api('GET', '/creditos'),
     api('GET', '/activos/alertas/vencimientos?dias=30'),
-    api('POST', '/flujo/reporte', { granularidad: 'mensual', desde: hoy(), hasta: hasta120, saldo_minimo: 0 })
+    api('POST', '/flujo/reporte', { granularidad: 'mensual', desde: inicioMes(), hasta: hasta120, saldo_minimo: 0 })
   ]);
   const bannerDef = flujo.alertas && flujo.alertas.length
     ? `<div class="card" style="border-left:4px solid var(--rojo);background:#fdeded"><b style="color:var(--rojo)">\u26A0 Alerta de deficit proyectado</b> &mdash; el saldo estimado cae bajo el minimo en: ${flujo.alertas.map(x => x.periodo + ' (' + clp(x.saldo) + ')').join(', ')}. <a href="#" onclick="go('flujo');return false">Ver flujo de caja</a></div>`
@@ -726,7 +727,7 @@ async function guardarUsuario() {
 
 // ===================== FLUJO DE CAJA =====================
 let flujoTab = 'reporte';
-let flujoParams = { granularidad: 'mensual', desde: hoy(), hasta: null, saldo_minimo: 0 };
+let flujoParams = { granularidad: 'mensual', desde: inicioMes(), hasta: null, saldo_minimo: 0 };
 function vFlujo() {
   if (!flujoParams.hasta) flujoParams.hasta = new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10);
   C().innerHTML = `<div class="tabs">
@@ -834,7 +835,7 @@ async function simularEscenario() {
   const incl = [...document.querySelectorAll('.wfChk:checked')].map(c => c.value);
   const excl = all.filter(x => !incl.includes(x));
   const min = Number(val('wfMin')) || 0;
-  const desde = hoy(), hasta = new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10);
+  const desde = inicioMes(), hasta = new Date(Date.now() + 180 * 86400000).toISOString().slice(0, 10);
   const base = await api('POST', '/flujo/reporte', { granularidad: 'mensual', desde, hasta, saldo_minimo: min });
   const escn = await api('POST', '/flujo/reporte', { granularidad: 'mensual', desde, hasta, saldo_minimo: min, excluir: excl });
   const fin = a => a.periodos.length ? a.periodos[a.periodos.length - 1].saldo_acum : a.saldoInicial;
@@ -1380,7 +1381,7 @@ function mesesEntre(desde, hasta) {
   return out;
 }
 async function fjPlanilla() {
-  if (!planParams.desde) { planParams.desde = hoy(); const d = new Date(); d.setMonth(d.getMonth() + 2); planParams.hasta = d.toISOString().slice(0, 10); }
+  if (!planParams.desde) { planParams.desde = inicioMes(); const d = new Date(); d.setMonth(d.getMonth() + 2); planParams.hasta = d.toISOString().slice(0, 10); }
   $('#fjBody').innerHTML = `<div class="card"><h3>Planilla mensual de flujo de caja</h3>
     <div class="row"><div class="field"><label>Desde</label><input id="plDesde" type="date" value="${planParams.desde}"></div>
       <div class="field"><label>Hasta</label><input id="plHasta" type="date" value="${planParams.hasta}"></div>
