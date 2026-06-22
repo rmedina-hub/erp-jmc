@@ -15,6 +15,10 @@ router.post('/login', (req, res) => {
 });
 
 router.get('/me', auth, (req, res) => res.json(req.user));
+router.post('/logout', auth, (req, res) => {
+  auditRaw({ usuario_id: req.user.id, usuario_nombre: req.user.nombre, usuario_email: req.user.email, rol: req.user.rol, empresa: req.user.empresa || null, modulo: 'Sesion', accion: 'Cierre de sesion', detalle: null });
+  res.json({ ok: true });
+});
 
 // Listado y creacion de usuarios (solo admin)
 router.get('/', auth, admin, (req, res) => {

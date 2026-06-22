@@ -62,6 +62,20 @@ router.post('/movimientos', (req, res) => {
   audit(req, 'Tesoreria', tipo, Math.abs(Number(monto)) + (glosa ? ' - ' + glosa : ''));
   res.json(db.prepare('SELECT * FROM tes_movimientos WHERE id=?').get(r.lastInsertRowid));
 });
+router.put('/movimientos/:id', (req, res) => {
+  const m = db.prepare('SELECT * FROM tes_movimientos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!m) return res.status(404).json({ error: 'No existe' });
+  const b = req.body;
+  let cuentaId = b.cuenta_id != null ? b.cuenta_id : m.cuenta_id;
+  if (cuentaId !== m.cuenta_id && !cuentaDeEmpresa(cuentaId, req.empresa)) cuentaId = m.cuenta_id;
+  const tipo = ['INGRESO', 'EGRESO'].includes(String(b.tipo || '').toUpperCase()) ? b.tipo.toUpperCase() : m.tipo;
+  db.prepare('UPDATE tes_movimientos SET fecha=?, cuenta_id=?, tipo=?, categoria=?, monto=?, glosa=?, documento=? WHERE id=? AND empresa=?')
+    .run(b.fecha || m.fecha, cuentaId, tipo, b.categoria != null ? b.categoria : m.categoria,
+      b.monto != null ? Math.abs(Number(b.monto)) : m.monto, b.glosa != null ? b.glosa : m.glosa,
+      b.documento != null ? b.documento : m.documento, req.params.id, req.empresa);
+  audit(req, 'Tesoreria', 'Editar movimiento', tipo + ' ' + (b.categoria != null ? b.categoria : m.categoria || ''));
+  res.json(db.prepare('SELECT * FROM tes_movimientos WHERE id=?').get(req.params.id));
+});
 router.delete('/movimientos/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM tes_movimientos WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
   if (!m) return res.status(404).json({ error: 'No existe' });

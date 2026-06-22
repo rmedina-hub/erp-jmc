@@ -24,4 +24,19 @@ router.get('/usuarios', (req, res) => {
   res.json(db.prepare('SELECT DISTINCT usuario_nombre, usuario_email FROM auditoria WHERE usuario_email IS NOT NULL ORDER BY usuario_nombre').all());
 });
 
+// Horario de uso: inicio (primer ingreso) y salida (ultimo cierre) por usuario y dia (hora local Chile UTC-4)
+router.get('/horarios', (req, res) => {
+  let sql = `SELECT usuario_email, MAX(usuario_nombre) usuario_nombre, date(ts,'-4 hours') dia,
+    MIN(CASE WHEN accion LIKE 'Inicio%' THEN ts END) inicio,
+    MAX(CASE WHEN accion LIKE 'Cierre%' THEN ts END) salida,
+    SUM(CASE WHEN accion LIKE 'Inicio%' THEN 1 ELSE 0 END) sesiones
+    FROM auditoria WHERE modulo='Sesion'`;
+  const p = [];
+  if (req.query.usuario) { sql += ' AND usuario_email=?'; p.push(req.query.usuario); }
+  if (req.query.desde) { sql += " AND date(ts,'-4 hours')>=?"; p.push(req.query.desde); }
+  if (req.query.hasta) { sql += " AND date(ts,'-4 hours')<=?"; p.push(req.query.hasta); }
+  sql += " GROUP BY usuario_email, date(ts,'-4 hours') ORDER BY dia DESC, usuario_nombre LIMIT 2000";
+  res.json(db.prepare(sql).all(...p));
+});
+
 module.exports = router;

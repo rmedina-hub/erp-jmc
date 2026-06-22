@@ -52,7 +52,7 @@ async function doLogin(e) {
     go(USER.rol === 'bodeguero' ? 'inventario' : 'dashboard');
   } catch (err) { $('#liErr').textContent = err.message; }
 }
-function logout() { TOKEN = null; USER = null; location.reload(); }
+async function logout() { try { await api('POST', '/usuarios/logout', {}); } catch (e) {} TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
 const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria' };
@@ -340,8 +340,9 @@ async function tesMovs() {
 async function tesMovsLoad() {
   tesCuenta = document.getElementById('tmCuenta').value;
   const m = await api('GET', '/tesoreria/movimientos?cuenta_id=' + tesCuenta);
+  window._tesMovs = m;
   $('#tmList').innerHTML = `<div class="scroll"><table><tr><th>Fecha</th><th>Tipo</th><th>Categoria</th><th>Glosa</th><th class="num">Monto</th><th>Concil.</th><th></th></tr>
-    ${m.length ? m.map(x => `<tr><td>${fdate(x.fecha)}</td><td><span class="pill ${x.tipo==='INGRESO'?'ok':'no'}">${x.tipo}</span></td><td>${esc(x.categoria||'')}</td><td>${esc(x.glosa||'')}</td><td class="num">${clp(x.monto)}</td><td>${x.conciliado?'<span class="pill ok">SI</span>':'<span class="pill warn">NO</span>'}</td><td><button class="btn sm red" onclick="delTesMov(${x.id})">x</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin movimientos</td></tr>'}</table></div>`;
+    ${m.length ? m.map(x => `<tr><td>${fdate(x.fecha)}</td><td><span class="pill ${x.tipo==='INGRESO'?'ok':'no'}">${x.tipo}</span></td><td>${esc(x.categoria||'')}</td><td>${esc(x.glosa||'')}</td><td class="num">${clp(x.monto)}</td><td>${x.conciliado?'<span class="pill ok">SI</span>':'<span class="pill warn">NO</span>'}</td><td><button class="btn sm ghost" onclick="editarTesMov(${x.id})">Editar</button> <button class="btn sm red" onclick="delTesMov(${x.id})">x</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin movimientos</td></tr>'}</table></div>`;
 }
 async function delTesMov(id) { if (confirm('Eliminar movimiento?')) { await api('DELETE', '/tesoreria/movimientos/' + id); tesMovsLoad(); } }
 // Conceptos de flujo de caja (coinciden con las lineas de la planilla; se reflejan de inmediato en el informe)
@@ -349,18 +350,26 @@ const CATS_FLUJO = {
   INGRESO: ['Ventas en efectivo', 'Cobros de cuentas de clientes', 'Préstamo / inyección de efectivo', 'Ingresos por intereses', 'Otros ingresos en efectivo'],
   EGRESO: ['Costos directos / materiales', 'Salarios directos', 'Subcontratistas', 'Remuneraciones / sueldos', 'Comisiones bancarias', 'Seguros', 'Arriendos', 'Servicios básicos', 'Otros gastos operativos', 'Cuotas de créditos bancarios', 'Gastos por intereses', 'Compra de activos / inversión', 'Impuestos']
 };
-function formTesMov() {
-  modal(`<h3>Ingreso / Egreso</h3>
-    <div class="row"><div class="field"><label>Fecha</label><input id="xFecha" type="date" value="${hoy()}"></div>
+function editarTesMov(id) { formTesMov((window._tesMovs || []).find(x => x.id === id)); }
+function formTesMov(mov) {
+  modal(`<h3>${mov ? 'Editar' : 'Nuevo'} ingreso / egreso</h3>
+    <div class="row"><div class="field"><label>Fecha</label><input id="xFecha" type="date" value="${mov ? fdate(mov.fecha) : hoy()}"></div>
       <div class="field"><label>Tipo</label><select id="xTipo" onchange="catFlujoOpts()"><option value="INGRESO">INGRESO</option><option value="EGRESO">EGRESO</option></select></div></div>
-    <div class="row"><div class="field"><label>Monto</label><input id="xMonto" type="number"></div>
+    <div class="row"><div class="field"><label>Monto</label><input id="xMonto" type="number" value="${mov ? mov.monto : ''}"></div>
       <div class="field"><label>Categoria (concepto de flujo)</label><select id="xCat" onchange="catFlujoToggle()"></select></div></div>
     <div class="row" id="xCatOtroRow" style="display:none"><div class="field"><label>Especificar categoria</label><input id="xCatOtro"></div></div>
-    <div class="row"><div class="field"><label>Documento</label><input id="xDoc"></div><div class="field"><label>Glosa</label><input id="xGlosa"></div></div>
+    <div class="row"><div class="field"><label>Documento</label><input id="xDoc" value="${mov ? esc(mov.documento || '') : ''}"></div><div class="field"><label>Glosa</label><input id="xGlosa" value="${mov ? esc(mov.glosa || '') : ''}"></div></div>
     <p class="muted" style="font-size:12px">La categoria define donde aparece el movimiento en el Flujo de caja (informe y planilla).</p>
     <div class="err" id="xErr"></div>
-    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarTesMov()">Guardar</button></div>`);
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarTesMov(${mov ? mov.id : 0})">Guardar</button></div>`);
+  if (mov) document.getElementById('xTipo').value = mov.tipo;
   catFlujoOpts();
+  if (mov && mov.categoria) {
+    const lista = CATS_FLUJO[mov.tipo] || [];
+    if (lista.includes(mov.categoria)) { document.getElementById('xCat').value = mov.categoria; }
+    else { document.getElementById('xCat').value = '__otro'; document.getElementById('xCatOtro').value = mov.categoria; }
+    catFlujoToggle();
+  }
 }
 function catFlujoOpts() {
   const tipo = val('xTipo');
@@ -371,9 +380,10 @@ function catFlujoOpts() {
 function catFlujoToggle() {
   const row = document.getElementById('xCatOtroRow'); if (row) row.style.display = (val('xCat') === '__otro') ? '' : 'none';
 }
-async function guardarTesMov() {
+async function guardarTesMov(id) {
   const cat = val('xCat') === '__otro' ? val('xCatOtro') : val('xCat');
-  try { await api('POST', '/tesoreria/movimientos', { fecha: val('xFecha'), cuenta_id: tesCuenta, tipo: val('xTipo'), monto: val('xMonto'), categoria: cat, documento: val('xDoc'), glosa: val('xGlosa') }); closeModal(); tesMovsLoad(); }
+  const body = { fecha: val('xFecha'), cuenta_id: tesCuenta, tipo: val('xTipo'), monto: val('xMonto'), categoria: cat, documento: val('xDoc'), glosa: val('xGlosa') };
+  try { if (id) await api('PUT', '/tesoreria/movimientos/' + id, body); else await api('POST', '/tesoreria/movimientos', body); closeModal(); tesMovsLoad(); }
   catch (e) { $('#xErr').textContent = e.message; }
 }
 async function tesCartola() {
@@ -1183,7 +1193,7 @@ async function vAuditoria() {
   try { usuarios = await api('GET', '/auditoria/usuarios'); } catch (e) {}
   const ambas = !USER.empresa;
   C().innerHTML = `<div class="card">
-    <h3>Historial de auditoria</h3>
+    <h3>Auditoria <button class="btn sm ghost" onclick="vHorarios()">Horario de uso (inicio/salida)</button></h3>
     <p class="muted">Registro de inicios de sesion y de toda creacion, edicion o eliminacion en el sistema.</p>
     <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:14px 0">
       <div><label class="lbl">Usuario</label><select id="auUsuario"><option value="">Todos</option>${usuarios.map(u => `<option value="${esc(u.usuario_email)}">${esc(u.usuario_nombre || u.usuario_email)}</option>`).join('')}</select></div>
@@ -1217,6 +1227,39 @@ async function cargarAuditoria() {
       ${rows.map(r => `<tr><td>${fmt(r.ts)}</td><td>${esc(r.usuario_nombre || r.usuario_email || '-')}</td><td>${r.empresa && BRANDS[r.empresa] ? esc(BRANDS[r.empresa].nombre) : esc(r.empresa || '-')}</td><td>${esc(r.modulo || '')}</td><td>${esc(r.accion || '')}</td><td>${esc(r.detalle || '')}</td></tr>`).join('')}</table>
       <p class="muted" style="margin-top:8px">Mostrando ${rows.length} registro(s), mas recientes primero (maximo 500).</p>`;
   } catch (e) { cont.innerHTML = '<div class="empty">Error al cargar el historial: ' + esc(e.message) + '</div>'; }
+}
+
+// ===================== HORARIO DE USO (inicio / salida) =====================
+async function vHorarios() {
+  C().innerHTML = '<div class="empty">Cargando...</div>';
+  let usuarios = [];
+  try { usuarios = await api('GET', '/auditoria/usuarios'); } catch (e) {}
+  C().innerHTML = `<div class="card">
+    <h3>Horario de uso del ERP <button class="btn sm ghost" onclick="vAuditoria()">Ver historial de acciones</button></h3>
+    <p class="muted">Inicio (primer ingreso) y salida (ultimo cierre de sesion) por usuario y dia. La salida se registra al presionar el boton "Salir"; si se cierra el navegador sin salir, queda sin hora de salida.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin:14px 0">
+      <div><label class="lbl">Usuario</label><select id="hUsuario"><option value="">Todos</option>${usuarios.map(u => `<option value="${esc(u.usuario_email)}">${esc(u.usuario_nombre || u.usuario_email)}</option>`).join('')}</select></div>
+      <div><label class="lbl">Desde</label><input type="date" id="hDesde"></div>
+      <div><label class="lbl">Hasta</label><input type="date" id="hHasta"></div>
+      <div><label class="lbl">&nbsp;</label><button class="btn" onclick="cargarHorarios()">Filtrar</button></div>
+    </div>
+    <div id="hTabla"><div class="empty">Cargando...</div></div></div>`;
+  cargarHorarios();
+}
+async function cargarHorarios() {
+  const qs = []; const u = val('hUsuario'), d = val('hDesde'), h = val('hHasta');
+  if (u) qs.push('usuario=' + encodeURIComponent(u));
+  if (d) qs.push('desde=' + d);
+  if (h) qs.push('hasta=' + h);
+  const cont = document.getElementById('hTabla');
+  try {
+    const rows = await api('GET', '/auditoria/horarios' + (qs.length ? '?' + qs.join('&') : ''));
+    const ht = (t) => { if (!t) return '<span class="muted">—</span>'; const dt = new Date(t.replace(' ', 'T') + 'Z'); return isNaN(dt) ? t : dt.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }); };
+    if (!rows.length) { cont.innerHTML = '<div class="empty">Sin registros para el filtro seleccionado.</div>'; return; }
+    cont.innerHTML = `<div class="scroll"><table><tr><th>Dia</th><th>Usuario</th><th>Inicio</th><th>Salida</th><th class="num">Sesiones</th></tr>
+      ${rows.map(r => `<tr><td>${esc(r.dia)}</td><td>${esc(r.usuario_nombre || r.usuario_email || '')}</td><td>${ht(r.inicio)}</td><td>${ht(r.salida)}</td><td class="num">${r.sesiones}</td></tr>`).join('')}</table></div>
+      <p class="muted" style="margin-top:8px">${rows.length} registro(s).</p>`;
+  } catch (e) { cont.innerHTML = '<div class="empty">Error: ' + esc(e.message) + '</div>'; }
 }
 
 // ===================== BRANDING MULTI-EMPRESA =====================
