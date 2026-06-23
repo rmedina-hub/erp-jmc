@@ -205,7 +205,10 @@ const ADD_COLS = [
   "ALTER TABLE usuarios ADD COLUMN bodega_id INTEGER",
   "ALTER TABLE activos ADD COLUMN vida_util_meses INTEGER DEFAULT 0",
   "ALTER TABLE activos ADD COLUMN valor_residual REAL DEFAULT 0",
-  "ALTER TABLE activos ADD COLUMN depreciable INTEGER DEFAULT 0"
+  "ALTER TABLE activos ADD COLUMN depreciable INTEGER DEFAULT 0",
+  "ALTER TABLE activos ADD COLUMN eliminado INTEGER DEFAULT 0",
+  "ALTER TABLE activos ADD COLUMN eliminado_at TEXT",
+  "ALTER TABLE activos ADD COLUMN eliminado_por TEXT"
 ];
 for (const sql of ADD_COLS) { try { db.exec(sql); } catch (e) {} }
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_auditoria_emp_ts ON auditoria(empresa, ts)'); } catch (e) {}

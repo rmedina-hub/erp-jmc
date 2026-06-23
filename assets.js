@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('./db');
-const { auth, noBodeguero } = require('./auth');
+const { auth, noBodeguero, admin } = require('./auth');
 const { audit } = require('./audit');
 const router = express.Router();
 router.use(auth, noBodeguero);
@@ -11,7 +11,7 @@ function activoDeEmpresa(id, empresa) {
 
 // ---------- Activos ----------
 router.get('/', (req, res) => {
-  const activos = db.prepare('SELECT * FROM activos WHERE empresa=? ORDER BY nombre').all(req.empresa);
+  const activos = db.prepare('SELECT * FROM activos WHERE empresa=? AND IFNULL(eliminado,0)=0 ORDER BY nombre').all(req.empresa);
   for (const a of activos) {
     const km = db.prepare('SELECT km, fecha FROM activo_kilometrajes WHERE activo_id=? ORDER BY fecha DESC, id DESC LIMIT 1').get(a.id);
     a.km_actual = km ? km.km : null;
@@ -52,11 +52,30 @@ router.get('/:id', (req, res) => {
   a.documentos.forEach(x => { const ar = tieneArch.get('documento', x.id); x.archivo = ar ? ar.nombre : null; });
   res.json(a);
 });
-router.delete('/:id', (req, res) => {
+router.delete('/:id', admin, (req, res) => {
+  const a = activoDeEmpresa(req.params.id, req.empresa);
+  if (!a) return res.status(404).json({ error: 'No existe' });
+  db.prepare('UPDATE activos SET eliminado=1, eliminado_at=?, eliminado_por=? WHERE id=?')
+    .run(new Date().toISOString(), req.user.nombre, req.params.id);
+  audit(req, 'Activos', 'Enviar a papelera', (a.codigo || '') + ' - ' + (a.nombre || ''));
+  res.json({ ok: true });
+});
+// Papelera (solo admin)
+router.get('/papelera/lista', admin, (req, res) => {
+  res.json(db.prepare('SELECT * FROM activos WHERE empresa=? AND eliminado=1 ORDER BY eliminado_at DESC').all(req.empresa));
+});
+router.post('/:id/restaurar', admin, (req, res) => {
+  const a = activoDeEmpresa(req.params.id, req.empresa);
+  if (!a) return res.status(404).json({ error: 'No existe' });
+  db.prepare('UPDATE activos SET eliminado=0, eliminado_at=NULL, eliminado_por=NULL WHERE id=?').run(req.params.id);
+  audit(req, 'Activos', 'Restaurar activo', (a.codigo || '') + ' - ' + (a.nombre || ''));
+  res.json({ ok: true });
+});
+router.delete('/:id/definitivo', admin, (req, res) => {
   const a = activoDeEmpresa(req.params.id, req.empresa);
   if (!a) return res.status(404).json({ error: 'No existe' });
   db.prepare('DELETE FROM activos WHERE id=?').run(req.params.id);
-  audit(req, 'Activos', 'Eliminar activo', (a.codigo || '') + ' - ' + (a.nombre || ''));
+  audit(req, 'Activos', 'Eliminar definitivo', (a.codigo || '') + ' - ' + (a.nombre || ''));
   res.json({ ok: true });
 });
 

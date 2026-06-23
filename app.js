@@ -585,13 +585,13 @@ async function delCredito(id) { if (confirm('Eliminar credito y su tabla?')) { a
 // ===================== ACTIVOS =====================
 let actTab = 'activos';
 async function vActivos() {
-  C().innerHTML = `<div class="tabs"><button data-t="activos">Activos</button><button data-t="alertas">Alertas de vencimiento</button></div><div id="actBody"></div>`;
+  C().innerHTML = `<div class="tabs"><button data-t="activos">Activos</button><button data-t="alertas">Alertas de vencimiento</button>${USER.rol === 'admin' ? '<button data-t="papelera">Papelera</button>' : ''}</div><div id="actBody"></div>`;
   C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { actTab = b.dataset.t; renderActTabs(); }));
   renderActTabs();
 }
 function renderActTabs() {
   C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === actTab));
-  (actTab === 'activos' ? actLista : actAlertas)();
+  ({ activos: actLista, alertas: actAlertas, papelera: actPapelera }[actTab] || actLista)();
 }
 let actFiltroCat = '';
 function estadoPillActivo(e) {
@@ -659,7 +659,7 @@ async function verActivo(id) {
     <div id="aDepr" class="muted" style="font-size:12px;margin-top:-4px"></div>
     <div class="tabs"><button class="active" onclick="actSub(event,'km',${id})">Kilometrajes</button><button onclick="actSub(event,'seg',${id})">Seguros</button><button onclick="actSub(event,'doc',${id})">Documentos</button></div>
     <div id="aSub"></div>
-    <div class="right" style="margin-top:14px"><button class="btn red" onclick="delActivo(${id})">Eliminar</button> <button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+    <div class="right" style="margin-top:14px">${USER.rol === 'admin' ? `<button class="btn red" onclick="delActivo(${id})">Enviar a papelera</button> ` : ''}<button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
   window._activo = a; renderSub('km', id);
   if (a.depreciable) { api('GET', '/activos/' + id + '/depreciacion').then(d => { const el = document.getElementById('aDepr'); if (el && d.depreciable) el.innerHTML = 'Depreciacion lineal: ' + clp(d.depreciacion_mensual) + '/mes &middot; acumulada ' + clp(d.depreciacion_acumulada) + ' (' + d.meses_transcurridos + ' meses) &middot; <b>valor libro ' + clp(d.valor_libro) + '</b>'; }).catch(() => {}); }
 }
@@ -691,7 +691,16 @@ async function addKm(id) { await api('POST', `/activos/${id}/kilometrajes`, { fe
 async function addSeguro(id) { await api('POST', `/activos/${id}/seguros`, { compania: val('sgC'), poliza: val('sgP'), fecha_inicio: val('sgI'), fecha_vencimiento: val('sgV'), prima: val('sgPr') }); verActivo(id); }
 async function addDoc(id) { await api('POST', `/activos/${id}/documentos`, { tipo: val('dcT'), numero: val('dcN'), fecha_emision: val('dcE'), fecha_vencimiento: val('dcV') }); verActivo(id); }
 async function delSub(tipo, sid, aid) { await api('DELETE', `/activos/${tipo}/${sid}`); verActivo(aid); }
-async function delActivo(id) { if (confirm('Eliminar activo y su historial?')) { await api('DELETE', '/activos/' + id); closeModal(); actLista(); } }
+async function delActivo(id) { if (confirm('Enviar este activo a la papelera? Podras restaurarlo despues.')) { await api('DELETE', '/activos/' + id); closeModal(); actLista(); } }
+async function actPapelera() {
+  const rows = await api('GET', '/activos/papelera/lista');
+  $('#actBody').innerHTML = `<div class="card"><h3>Papelera de activos</h3>
+    <p class="muted">Activos eliminados. Puedes restaurarlos o borrarlos definitivamente.</p>
+    <div class="scroll"><table><tr><th>Codigo</th><th>Nombre</th><th>Categoria</th><th class="num">Valor</th><th>Eliminado por</th><th>Fecha</th><th></th></tr>
+    ${rows.length ? rows.map(a => `<tr><td>${esc(a.codigo)}</td><td>${esc(a.nombre)}</td><td>${esc(a.categoria||'')}</td><td class="num">${clp(a.valor_compra)}</td><td>${esc(a.eliminado_por||'')}</td><td>${a.eliminado_at ? new Date(a.eliminado_at).toLocaleString('es-CL') : ''}</td><td><button class="btn sm green" onclick="restaurarActivo(${a.id})">Restaurar</button> <button class="btn sm red" onclick="borrarDefinitivo(${a.id})">Borrar definitivo</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Papelera vacia</td></tr>'}</table></div></div>`;
+}
+async function restaurarActivo(id) { await api('POST', '/activos/' + id + '/restaurar', {}); actPapelera(); }
+async function borrarDefinitivo(id) { if (confirm('Borrar DEFINITIVAMENTE este activo? Esta accion no se puede deshacer.')) { await api('DELETE', '/activos/' + id + '/definitivo'); actPapelera(); } }
 function pdfCell(tipo, x, aid) {
   const ver = x.archivo ? `<a href="#" onclick="descArch('${tipo}',${x.id});return false" style="margin-right:8px">ver PDF</a>` : '';
   return `${ver}<label class="btn sm ghost" style="cursor:pointer;margin:0">${x.archivo ? 'cambiar' : 'subir PDF'}<input type="file" accept="application/pdf" style="display:none" onchange="subirArch('${tipo}',${x.id},${aid},this)"></label>`;
