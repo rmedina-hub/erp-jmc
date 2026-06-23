@@ -65,6 +65,8 @@ router.get('/', (req, res) => {
       COALESCE(SUM(cuota),0) total_pagar FROM credito_cuotas WHERE credito_id=?`).get(c.id);
     c.cuotas_total = ag.tot; c.cuotas_pagadas = ag.pagadas || 0;
     c.saldo_pendiente = r2(ag.saldo_pendiente); c.total_pagar = r2(ag.total_pagar);
+    const cq = db.prepare('SELECT cuota FROM credito_cuotas WHERE credito_id=? AND pagado=0 ORDER BY numero LIMIT 1').get(c.id) || db.prepare('SELECT cuota FROM credito_cuotas WHERE credito_id=? ORDER BY numero LIMIT 1').get(c.id);
+    c.cuota = cq ? r2(cq.cuota) : 0;
   }
   res.json(creditos);
 });

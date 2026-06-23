@@ -10,6 +10,26 @@ const hoy = () => new Date().toISOString().slice(0, 10);
 const inicioMes = () => hoy().slice(0, 8) + '01';
 const esc = (s) => (s == null ? '' : String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
 
+function exportarVista() {
+  const cont = document.getElementById('content');
+  const tablas = cont ? cont.querySelectorAll('table') : [];
+  if (!tablas.length) { alert('Esta vista no tiene una tabla para exportar.'); return; }
+  let csv = '';
+  tablas.forEach((t, ti) => {
+    if (ti > 0) csv += '\r\n';
+    t.querySelectorAll('tr').forEach(tr => {
+      const celdas = [...tr.querySelectorAll('th,td')].filter(c => !c.querySelector('button,input,select,label'));
+      if (!celdas.length) return;
+      csv += celdas.map(c => '"' + (c.innerText || '').replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"').join(';') + '\r\n';
+    });
+  });
+  const titulo = (document.getElementById('viewTitle') ? document.getElementById('viewTitle').textContent : 'export') || 'export';
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = titulo.replace(/[^\w]+/g, '_') + '_' + hoy() + '.csv';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
 function activeEmpresa() {
   // Empresa activa para aislar datos. Usuarios con empresa fija usan la suya;
   // los de acceso a ambas (Adrian) usan la seleccionada en el switch.
@@ -458,8 +478,8 @@ async function crearDesdeCartola(id) {
 async function vCreditos() {
   const creds = await api('GET', '/creditos');
   C().innerHTML = `<div class="card"><h3>Creditos bancarios <button class="btn" onclick="formCredito()">+ Nuevo credito</button></h3>
-    <div class="scroll"><table><tr><th>Banco</th><th>Nombre</th><th>Tipo</th><th>Sistema</th><th class="num">Monto</th><th class="num">Tasa mens.</th><th>Cuotas</th><th class="num">Saldo pend.</th><th>Estado</th><th></th></tr>
-    ${creds.length ? creds.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}${c.glosa?`<br><span class="muted" style="font-size:11px">${esc(c.glosa)}</span>`:''}</td><td>${c.tipo||'CREDITO'}</td><td>${c.sistema}</td><td class="num">${clp(c.monto)}</td><td class="num">${num(c.tasa_mensual,2)}%</td><td>${c.cuotas_pagadas}/${c.cuotas_total}</td><td class="num">${clp(c.saldo_pendiente)}</td><td><span class="pill ${c.estado==='PAGADO'?'ok':'warn'}">${c.estado}</span></td><td><button class="btn sm ghost" onclick="verCredito(${c.id})">Tabla</button> <button class="btn sm ghost" onclick="editarCredito(${c.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Sin creditos registrados</td></tr>'}</table></div></div>`;
+    <div class="scroll"><table><tr><th>Banco</th><th>Nombre</th><th>Tipo</th><th>Sistema</th><th class="num">Monto</th><th class="num">Cuota</th><th class="num">Tasa mens.</th><th>Cuotas</th><th class="num">Saldo pend.</th><th>Estado</th><th></th></tr>
+    ${creds.length ? creds.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}${c.glosa?`<br><span class="muted" style="font-size:11px">${esc(c.glosa)}</span>`:''}</td><td>${c.tipo||'CREDITO'}</td><td>${c.sistema}</td><td class="num">${clp(c.monto)}</td><td class="num">${clp(c.cuota||0)}</td><td class="num">${num(c.tasa_mensual,2)}%</td><td>${c.cuotas_pagadas}/${c.cuotas_total}</td><td class="num">${clp(c.saldo_pendiente)}</td><td><span class="pill ${c.estado==='PAGADO'?'ok':'warn'}">${c.estado}</span></td><td><button class="btn sm ghost" onclick="verCredito(${c.id})">Tabla</button> <button class="btn sm ghost" onclick="editarCredito(${c.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="11" class="empty">Sin creditos registrados</td></tr>'}</table></div></div>`;
 }
 async function formCredito() {
   const cu = await api('GET', '/tesoreria/cuentas');
@@ -654,7 +674,7 @@ async function renderSub(t, id) {
       <div class="row"><div class="field"><label>Inicio</label><input id="sgI" type="date"></div><div class="field"><label>Vencimiento</label><input id="sgV" type="date"></div><div class="field"><label>Prima</label><input id="sgPr" type="number"></div><button class="btn" onclick="addSeguro(${id})">+ Agregar</button></div>
       <table style="margin-top:12px"><tr><th>Compania</th><th>Poliza</th><th>Vence</th><th class="num">Prima</th><th>PDF</th><th></th></tr>${a.seguros.length ? a.seguros.map(s => `<tr><td>${esc(s.compania||'')}</td><td>${esc(s.poliza||'')}</td><td>${fdate(s.fecha_vencimiento)} ${venceBadge(s.fecha_vencimiento)}</td><td class="num">${clp(s.prima)}</td><td>${pdfCell('seguros',s,id)}</td><td><button class="btn sm red" onclick="delSub('seguros',${s.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin seguros</td></tr>'}</table>`;
   } else {
-    $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Tipo</label><select id="dcT"><option>PERMISO_CIRCULACION</option><option>REVISION_TECNICA</option><option>SEGURO_OBLIGATORIO</option><option>PADRON</option><option>OTRO</option></select></div><div class="field"><label>Numero</label><input id="dcN"></div></div>
+    $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Tipo</label><select id="dcT"><option>SOAP</option><option>PERMISO_CIRCULACION</option><option>REVISION_TECNICA</option><option>SEGURO_OBLIGATORIO</option><option>PADRON</option><option>OTRO</option></select></div><div class="field"><label>Numero</label><input id="dcN"></div></div>
       <div class="row"><div class="field"><label>Emision</label><input id="dcE" type="date"></div><div class="field"><label>Vencimiento</label><input id="dcV" type="date"></div><button class="btn" onclick="addDoc(${id})">+ Agregar</button></div>
       <table style="margin-top:12px"><tr><th>Tipo</th><th>Numero</th><th>Vence</th><th>PDF</th><th></th></tr>${a.documentos.length ? a.documentos.map(d => `<tr><td>${esc(d.tipo)}</td><td>${esc(d.numero||'')}</td><td>${fdate(d.fecha_vencimiento)} ${venceBadge(d.fecha_vencimiento)}</td><td>${pdfCell('documentos',d,id)}</td><td><button class="btn sm red" onclick="delSub('documentos',${d.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin documentos</td></tr>'}</table>`;
   }
@@ -758,9 +778,10 @@ async function fjReporte() {
 async function fjCalcular() {
   flujoParams = { granularidad: val('fGran'), desde: val('fDesde'), hasta: val('fHasta'), saldo_minimo: Number(val('fMin')) || 0 };
   const r = await api('POST', '/flujo/reporte', flujoParams);
-  $('#fjRes').innerHTML = renderReporte(r);
+  let ev = null; try { ev = await api('POST', '/flujo/eventos', flujoParams); } catch (e) {}
+  $('#fjRes').innerHTML = renderReporte(r, ev);
 }
-function renderReporte(r) {
+function renderReporte(r, ev) {
   const al = r.alertas.length
     ? `<div class="card" style="border-left:4px solid var(--rojo);background:#fdeded"><b style="color:var(--rojo)">⚠ Deficit proyectado</b> en ${r.alertas.length} periodo(s): ${r.alertas.map(a => a.periodo + ' (' + clp(a.saldo) + ')').join(', ')}</div>`
     : `<div class="card" style="border-left:4px solid var(--verde);background:#eafaf0"><b style="color:var(--verde)">Sin deficit proyectado</b> &mdash; el saldo se mantiene sobre ${clp(r.saldoMinimo)}.</div>`;
@@ -788,7 +809,20 @@ function renderReporte(r) {
   <div class="card"><h3>Clasificacion por actividad (flujo neto)</h3>
     <table><tr><th>Actividad</th><th class="num">Real</th><th class="num">Proyectado</th></tr>
       ${acts.map(k => `<tr><td>${lbl[k]}</td>${netoCell(r.actividades[k].real)}${netoCell(r.actividades[k].proy)}</tr>`).join('')}
-    </table></div>`;
+    </table></div>` + renderDetalleCategorias(ev);
+}
+function renderDetalleCategorias(ev) {
+  if (!ev || !ev.eventos) return '';
+  const acc = {};
+  PLAN_SECCIONES.forEach(sec => sec.lines.forEach(([k]) => acc[k] = { real: 0, proy: 0 }));
+  ev.eventos.forEach(e => { const k = planMapLinea(e); if (acc[k]) acc[k][e.clase === 'REAL' ? 'real' : 'proy'] += e.monto; });
+  const cell = v => `<td class="num">${v ? clp(v) : '<span class="muted">—</span>'}</td>`;
+  return `<div class="card"><h3>Detalle por categoria (concepto de flujo)</h3>
+    <p class="muted" style="margin-top:-6px">Refleja directamente la categoria que asignas a cada ingreso/egreso en Tesoreria.</p>
+    <div class="scroll"><table><tr><th>Concepto</th><th class="num">Real</th><th class="num">Proyectado</th></tr>
+    ${PLAN_SECCIONES.map(sec => `<tr><td colspan="3" style="background:#eaf0f6;font-weight:600;color:var(--azul)">${sec.titulo}</td></tr>` +
+      sec.lines.map(([k, lab]) => `<tr><td>&nbsp;&nbsp;${lab}</td>${cell(acc[k].real)}${cell(acc[k].proy)}</tr>`).join('')).join('')}
+    </table></div></div>`;
 }
 async function fjProy() {
   const items = await api('GET', '/flujo/proyeccion');
@@ -867,9 +901,22 @@ async function facLista() {
   window._facturas = d.items;
   const esCobrar = facTipo === 'COBRAR';
   const pend = esCobrar ? d.resumen.cobrar_pend : d.resumen.pagar_pend;
+  const hoyD = new Date(hoy() + 'T00:00:00');
+  const bk = { venc: 0, b30: 0, b60: 0, b90: 0, bmas: 0 };
+  d.items.filter(x => x.estado === 'PENDIENTE').forEach(x => {
+    const dd = Math.ceil((new Date((x.fecha_vencimiento || hoy()) + 'T00:00:00') - hoyD) / 86400000);
+    if (dd < 0) bk.venc += x.monto; else if (dd <= 30) bk.b30 += x.monto; else if (dd <= 60) bk.b60 += x.monto; else if (dd <= 90) bk.b90 += x.monto; else bk.bmas += x.monto;
+  });
   $('#facBody').innerHTML = `<div class="card">
-    <h3>${esCobrar ? 'Cuentas por cobrar' : 'Cuentas por pagar'} <button class="btn" onclick="formFactura()">+ Nueva factura ${esCobrar ? 'por cobrar' : 'por pagar'}</button> <button class="btn ghost" onclick="formImportFac()">Importar CSV</button></h3>
-    <p class="muted">Pendiente total: <b>${clp(pend)}</b>. Las facturas pendientes se proyectan automaticamente en el <b>Flujo de caja</b> segun su fecha de vencimiento.</p>
+    <h3>${esCobrar ? 'Cuentas por cobrar' : 'Cuentas por pagar'} <button class="btn" onclick="formFactura()">+ Nueva factura ${esCobrar ? 'por cobrar' : 'por pagar'}</button> <button class="btn ghost" onclick="formImportFac()">Importar CSV</button> <button class="btn ghost" onclick="exportarVista()">Exportar Excel</button></h3>
+    <p class="muted">Total pendiente ${esCobrar ? 'por cobrar' : 'por pagar'}: <b>${clp(pend)}</b>. Las pendientes se proyectan en el <b>Flujo de caja</b> por su fecha de vencimiento (mientras no se paguen siguen como saldo pendiente).</p>
+    <div class="grid g4" style="margin:6px 0 14px">
+      <div class="kpi"><div class="lbl">Vencido</div><div class="val" style="color:var(--rojo)">${clp(bk.venc)}</div></div>
+      <div class="kpi"><div class="lbl">Por vencer 0-30 dias</div><div class="val">${clp(bk.b30)}</div></div>
+      <div class="kpi"><div class="lbl">31-60 dias</div><div class="val">${clp(bk.b60)}</div></div>
+      <div class="kpi"><div class="lbl">61-90 dias</div><div class="val">${clp(bk.b90)}</div></div>
+      <div class="kpi"><div class="lbl">+ de 90 dias</div><div class="val">${clp(bk.bmas)}</div></div>
+    </div>
     <div class="scroll"><table><tr><th>${esCobrar ? 'Cliente' : 'Proveedor'}</th><th>RUT</th><th>N&deg; Factura</th><th>Emision</th><th>Vence</th><th class="num">Monto</th><th>Estado</th><th></th></tr>
     ${d.items.length ? d.items.map(f => `<tr><td>${esc(f.contraparte || '')}</td><td>${esc(f.rut || '')}</td><td>${esc(f.numero || '')}</td><td>${fdate(f.fecha_emision)}</td><td>${fdate(f.fecha_vencimiento)} ${f.estado === 'PENDIENTE' ? venceBadge(f.fecha_vencimiento) : ''}</td><td class="num">${clp(f.monto)}</td><td>${f.estado === 'PAGADA' ? `<span class="pill ok">${esCobrar ? 'COBRADA' : 'PAGADA'}</span>` : '<span class="pill warn">PENDIENTE</span>'}</td>
       <td>${f.estado === 'PENDIENTE' ? `<button class="btn sm green" onclick="pagarFactura(${f.id})">${esCobrar ? 'Cobrar' : 'Pagar'}</button> <button class="btn sm ghost" onclick="formFactura(${f.id})">Editar</button> ` : ''}<button class="btn sm red" onclick="delFactura(${f.id})">x</button></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Sin registros</td></tr>'}</table></div></div>`;
@@ -917,7 +964,10 @@ function leerCSVFac() {
 }
 async function importarFac() {
   try {
-    const d = await api('POST', '/facturas/import', { tipo: facTipo, csv: val('fiTxt') });
+    let csv = val('fiTxt');
+    if (!csv) { const fi = document.getElementById('fiFile'); if (fi && fi.files[0]) csv = await fi.files[0].text(); }
+    if (!csv) { $('#fiErr').textContent = 'Selecciona un archivo CSV o pega el contenido primero.'; return; }
+    const d = await api('POST', '/facturas/import', { tipo: facTipo, csv });
     $('#fiRes').innerHTML = `<div class="card" style="margin-top:10px"><b>${d.importadas}</b> importadas${d.omitidas ? `, <b>${d.omitidas}</b> omitidas` : ''}.</div>`;
     facLista();
   } catch (e) { $('#fiErr').textContent = e.message; }
