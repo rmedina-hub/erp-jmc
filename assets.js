@@ -107,10 +107,12 @@ router.delete('/seguros/:sid', (req, res) => {
 // ---------- Documentos ----------
 router.post('/:id/documentos', (req, res) => {
   const { tipo, numero, fecha_emision, fecha_vencimiento, glosa } = req.body;
-  if (!tipo || !fecha_vencimiento) return res.status(400).json({ error: 'tipo y fecha_vencimiento requeridos' });
+  const noVence = ['PADRON', 'PRIMERA_INSCRIPCION'].includes(String(tipo || '').toUpperCase());
+  if (!tipo) return res.status(400).json({ error: 'tipo requerido' });
+  if (!noVence && !fecha_vencimiento) return res.status(400).json({ error: 'fecha_vencimiento requerida' });
   if (!activoDeEmpresa(req.params.id, req.empresa)) return res.status(404).json({ error: 'Activo no existe' });
   const r = db.prepare(`INSERT INTO activo_documentos (activo_id,tipo,numero,fecha_emision,fecha_vencimiento,glosa,empresa)
-    VALUES (?,?,?,?,?,?,?)`).run(req.params.id, tipo, numero || null, fecha_emision || null, fecha_vencimiento, glosa || null, req.empresa);
+    VALUES (?,?,?,?,?,?,?)`).run(req.params.id, tipo, numero || null, fecha_emision || null, fecha_vencimiento || '', glosa || null, req.empresa);
   audit(req, 'Activos', 'Agregar documento', tipo + ' (activo ' + req.params.id + ') vence ' + fecha_vencimiento);
   res.json(db.prepare('SELECT * FROM activo_documentos WHERE id=?').get(r.lastInsertRowid));
 });
@@ -163,7 +165,7 @@ router.get('/alertas/vencimientos', (req, res) => {
     WHERE s.empresa=? AND s.fecha_vencimiento <= ? ORDER BY s.fecha_vencimiento`).all(req.empresa, limite);
   const docs = db.prepare(`SELECT d.*, a.nombre AS activo, a.patente, 'DOCUMENTO' AS clase
     FROM activo_documentos d JOIN activos a ON a.id=d.activo_id
-    WHERE d.empresa=? AND d.fecha_vencimiento <= ? ORDER BY d.fecha_vencimiento`).all(req.empresa, limite);
+    WHERE d.empresa=? AND d.fecha_vencimiento <> '' AND d.fecha_vencimiento IS NOT NULL AND d.tipo NOT IN ('PADRON','PRIMERA_INSCRIPCION') AND d.fecha_vencimiento <= ? ORDER BY d.fecha_vencimiento`).all(req.empresa, limite);
   const map = (x) => ({
     clase: x.clase, activo: x.activo, patente: x.patente,
     detalle: x.clase === 'SEGURO' ? ('Seguro ' + (x.compania || '')) : (x.tipo + ' ' + (x.numero || '')),

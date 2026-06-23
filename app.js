@@ -674,13 +674,15 @@ async function renderSub(t, id) {
       <div class="row"><div class="field"><label>Inicio</label><input id="sgI" type="date"></div><div class="field"><label>Vencimiento</label><input id="sgV" type="date"></div><div class="field"><label>Prima</label><input id="sgPr" type="number"></div><button class="btn" onclick="addSeguro(${id})">+ Agregar</button></div>
       <table style="margin-top:12px"><tr><th>Compania</th><th>Poliza</th><th>Vence</th><th class="num">Prima</th><th>PDF</th><th></th></tr>${a.seguros.length ? a.seguros.map(s => `<tr><td>${esc(s.compania||'')}</td><td>${esc(s.poliza||'')}</td><td>${fdate(s.fecha_vencimiento)} ${venceBadge(s.fecha_vencimiento)}</td><td class="num">${clp(s.prima)}</td><td>${pdfCell('seguros',s,id)}</td><td><button class="btn sm red" onclick="delSub('seguros',${s.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin seguros</td></tr>'}</table>`;
   } else {
-    $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Tipo</label><select id="dcT"><option>SOAP</option><option>PERMISO_CIRCULACION</option><option>REVISION_TECNICA</option><option>SEGURO_OBLIGATORIO</option><option>PADRON</option><option>OTRO</option></select></div><div class="field"><label>Numero</label><input id="dcN"></div></div>
+    $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Tipo</label><select id="dcT"><option>SOAP</option><option>PERMISO_CIRCULACION</option><option>REVISION_TECNICA</option><option>SEGURO_OBLIGATORIO</option><option>PADRON</option><option>PRIMERA_INSCRIPCION</option><option>OTRO</option></select></div><div class="field"><label>Numero</label><input id="dcN"></div></div>
       <div class="row"><div class="field"><label>Emision</label><input id="dcE" type="date"></div><div class="field"><label>Vencimiento</label><input id="dcV" type="date"></div><button class="btn" onclick="addDoc(${id})">+ Agregar</button></div>
-      <table style="margin-top:12px"><tr><th>Tipo</th><th>Numero</th><th>Vence</th><th>PDF</th><th></th></tr>${a.documentos.length ? a.documentos.map(d => `<tr><td>${esc(d.tipo)}</td><td>${esc(d.numero||'')}</td><td>${fdate(d.fecha_vencimiento)} ${venceBadge(d.fecha_vencimiento)}</td><td>${pdfCell('documentos',d,id)}</td><td><button class="btn sm red" onclick="delSub('documentos',${d.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin documentos</td></tr>'}</table>`;
+      <table style="margin-top:12px"><tr><th>Tipo</th><th>Numero</th><th>Vence</th><th>PDF</th><th></th></tr>${a.documentos.length ? a.documentos.map(d => `<tr><td>${esc(d.tipo)}</td><td>${esc(d.numero||'')}</td><td>${(['PADRON','PRIMERA_INSCRIPCION'].includes(d.tipo) || !d.fecha_vencimiento) ? '<span class="muted">No vence</span>' : fdate(d.fecha_vencimiento) + ' ' + venceBadge(d.fecha_vencimiento)}</td><td>${pdfCell('documentos',d,id)}</td><td><button class="btn sm red" onclick="delSub('documentos',${d.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin documentos</td></tr>'}</table>`;
   }
 }
 function venceBadge(f) {
+  if (!f) return '';
   const dias = Math.ceil((new Date(f) - new Date(hoy())) / 86400000);
+  if (isNaN(dias)) return '';
   if (dias < 0) return '<span class="pill no">vencido</span>';
   if (dias <= 30) return `<span class="pill warn">${dias}d</span>`;
   return '';
