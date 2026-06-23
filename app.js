@@ -876,20 +876,33 @@ async function fjProy() {
 function formProy() {
   modal(`<h3>Nuevo movimiento proyectado</h3>
     <div class="row"><div class="field"><label>Fecha</label><input id="fpF" type="date" value="${hoy()}"></div>
-      <div class="field"><label>Tipo</label><select id="fpT"><option value="INGRESO">INGRESO</option><option value="EGRESO">EGRESO</option></select></div></div>
+      <div class="field"><label>Tipo</label><select id="fpT" onchange="catProyOpts()"><option value="INGRESO">INGRESO</option><option value="EGRESO">EGRESO</option></select></div></div>
     <div class="row"><div class="field"><label>Actividad</label><select id="fpA"><option value="OPERACIONAL">Operacional</option><option value="INVERSION">Inversion</option><option value="FINANCIAMIENTO">Financiamiento</option></select></div>
-      <div class="field"><label>Categoria</label><input id="fpC"></div></div>
+      <div class="field"><label>Categoria (concepto de flujo)</label><select id="fpC" onchange="catProyToggle()"></select></div></div>
+    <div class="row" id="fpCOtroRow" style="display:none"><div class="field"><label>Especificar categoria</label><input id="fpCOtro"></div></div>
     <div class="row"><div class="field"><label>Descripcion</label><input id="fpD"></div></div>
     <div class="row"><div class="field"><label>Monto</label><input id="fpM" type="number"></div>
       <div class="field"><label>Probabilidad de ocurrencia (%)</label><input id="fpP" type="number" value="100"></div></div>
     <div class="row"><div class="field"><label>Cliente (opcional)</label><input id="fpCl"></div>
       <div class="field"><label>Movimiento</label><label style="font-weight:400;display:block;padding-top:8px"><input type="checkbox" id="fpE" style="width:auto"> Extra contable / variable</label></div></div>
+    <p class="muted" style="font-size:12px">La categoria define donde aparece el movimiento en el Flujo de caja (informe y planilla).</p>
     <div class="err" id="fpErr"></div>
     <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarProy()">Guardar</button></div>`);
+  catProyOpts();
+}
+function catProyOpts() {
+  const tipo = val('fpT');
+  const sel = document.getElementById('fpC'); if (!sel) return;
+  sel.innerHTML = (CATS_FLUJO[tipo] || []).map(c => `<option>${c}</option>`).join('') + '<option value="__otro">Otro (especificar)</option>';
+  catProyToggle();
+}
+function catProyToggle() {
+  const row = document.getElementById('fpCOtroRow'); if (row) row.style.display = (val('fpC') === '__otro') ? '' : 'none';
 }
 async function guardarProy() {
+  const cat = val('fpC') === '__otro' ? val('fpCOtro') : val('fpC');
   try {
-    await api('POST', '/flujo/proyeccion', { fecha: val('fpF'), tipo: val('fpT'), actividad: val('fpA'), categoria: val('fpC'), descripcion: val('fpD'), monto: val('fpM'), probabilidad: val('fpP'), cliente: val('fpCl'), extra_contable: document.getElementById('fpE').checked });
+    await api('POST', '/flujo/proyeccion', { fecha: val('fpF'), tipo: val('fpT'), actividad: val('fpA'), categoria: cat, descripcion: val('fpD'), monto: val('fpM'), probabilidad: val('fpP'), cliente: val('fpCl'), extra_contable: document.getElementById('fpE').checked });
     closeModal(); fjProy();
   } catch (e) { $('#fpErr').textContent = e.message; }
 }
