@@ -64,7 +64,7 @@ async function doLogin(e) {
     $('#app').style.display = 'block';
     $('#userName').textContent = USER.nombre;
     $('#userRol').textContent = '(' + USER.rol + ')';
-    if (USER.rol !== 'admin') { $('#navUsuarios').style.display = 'none'; const na = document.getElementById('navAuditoria'); if (na) na.style.display = 'none'; }
+    if (USER.rol !== 'admin') { $('#navUsuarios').style.display = 'none'; const na = document.getElementById('navAuditoria'); if (na) na.style.display = 'none'; const np = document.getElementById('navPapelera'); if (np) np.style.display = 'none'; }
     if (USER.rol === 'bodeguero') {
       document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.v !== 'inventario') a.style.display = 'none'; });
     }
@@ -93,11 +93,11 @@ function activarOcultarBorrar() {
 async function logout() { try { await api('POST', '/usuarios/logout', {}); } catch (e) {} TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
 function go(v) {
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
 
@@ -721,8 +721,16 @@ async function actPapelera() {
     <div class="scroll"><table><tr><th>Codigo</th><th>Nombre</th><th>Categoria</th><th class="num">Valor</th><th>Eliminado por</th><th>Fecha</th><th></th></tr>
     ${rows.length ? rows.map(a => `<tr><td>${esc(a.codigo)}</td><td>${esc(a.nombre)}</td><td>${esc(a.categoria||'')}</td><td class="num">${clp(a.valor_compra)}</td><td>${esc(a.eliminado_por||'')}</td><td>${a.eliminado_at ? new Date(a.eliminado_at).toLocaleString('es-CL') : ''}</td><td><button class="btn sm green" onclick="restaurarActivo(${a.id})">Restaurar</button> <button class="btn sm red" onclick="borrarDefinitivo(${a.id})">Borrar definitivo</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Papelera vacia</td></tr>'}</table></div></div>`;
 }
-async function restaurarActivo(id) { await api('POST', '/activos/' + id + '/restaurar', {}); actPapelera(); }
-async function borrarDefinitivo(id) { if (confirm('Borrar DEFINITIVAMENTE este activo? Esta accion no se puede deshacer.')) { await api('DELETE', '/activos/' + id + '/definitivo'); actPapelera(); } }
+async function vPapelera() {
+  C().innerHTML = '<div class="empty">Cargando...</div>';
+  const rows = await api('GET', '/activos/papelera/lista');
+  C().innerHTML = `<div class="card"><h3>Papelera de activos eliminados</h3>
+    <p class="muted">Activos enviados a la papelera. Puedes restaurarlos al modulo de Activos fijos o borrarlos definitivamente.</p>
+    <div class="scroll"><table><tr><th>Codigo</th><th>Nombre</th><th>Categoria</th><th class="num">Valor</th><th>Eliminado por</th><th>Fecha</th><th></th></tr>
+    ${rows.length ? rows.map(a => `<tr><td>${esc(a.codigo)}</td><td>${esc(a.nombre)}</td><td>${esc(a.categoria||'')}</td><td class="num">${clp(a.valor_compra)}</td><td>${esc(a.eliminado_por||'')}</td><td>${a.eliminado_at ? new Date(a.eliminado_at).toLocaleString('es-CL') : ''}</td><td><button class="btn sm green" onclick="restaurarActivo(${a.id})">Restaurar</button> <button class="btn sm red" onclick="borrarDefinitivo(${a.id})">Borrar definitivo</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Papelera vacia</td></tr>'}</table></div></div>`;
+}
+async function restaurarActivo(id) { await api('POST', '/activos/' + id + '/restaurar', {}); vPapelera(); }
+async function borrarDefinitivo(id) { if (confirm('Borrar DEFINITIVAMENTE este activo? Esta accion no se puede deshacer.')) { await api('DELETE', '/activos/' + id + '/definitivo'); vPapelera(); } }
 function pdfCell(tipo, x, aid) {
   const ver = x.archivo ? `<a href="#" onclick="descArch('${tipo}',${x.id});return false" style="margin-right:8px">ver PDF</a>` : '';
   return `${ver}<label class="btn sm ghost" style="cursor:pointer;margin:0">${x.archivo ? 'cambiar' : 'subir PDF'}<input type="file" accept="application/pdf" style="display:none" onchange="subirArch('${tipo}',${x.id},${aid},this)"></label>`;
