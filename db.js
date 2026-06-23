@@ -88,6 +88,10 @@ CREATE TABLE IF NOT EXISTS activo_documentos (
   id INTEGER PRIMARY KEY AUTOINCREMENT, activo_id INTEGER NOT NULL REFERENCES activos(id) ON DELETE CASCADE,
   tipo TEXT NOT NULL, numero TEXT, fecha_emision TEXT, fecha_vencimiento TEXT NOT NULL, glosa TEXT, empresa TEXT);
 
+CREATE TABLE IF NOT EXISTS activo_mantenciones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, activo_id INTEGER NOT NULL REFERENCES activos(id) ON DELETE CASCADE,
+  fecha TEXT NOT NULL, km REAL, tipo TEXT, costo REAL NOT NULL DEFAULT 0, proximo_km REAL, glosa TEXT, empresa TEXT);
+
 CREATE TABLE IF NOT EXISTS flujo_proyeccion (
   id INTEGER PRIMARY KEY AUTOINCREMENT, fecha TEXT NOT NULL, tipo TEXT NOT NULL,
   actividad TEXT NOT NULL DEFAULT 'OPERACIONAL', categoria TEXT, descripcion TEXT,
@@ -208,7 +212,9 @@ const ADD_COLS = [
   "ALTER TABLE activos ADD COLUMN depreciable INTEGER DEFAULT 0",
   "ALTER TABLE activos ADD COLUMN eliminado INTEGER DEFAULT 0",
   "ALTER TABLE activos ADD COLUMN eliminado_at TEXT",
-  "ALTER TABLE activos ADD COLUMN eliminado_por TEXT"
+  "ALTER TABLE activos ADD COLUMN eliminado_por TEXT",
+  "ALTER TABLE activos ADD COLUMN mantencion_intervalo_km REAL DEFAULT 0",
+  "ALTER TABLE activo_mantenciones ADD COLUMN empresa TEXT"
 ];
 for (const sql of ADD_COLS) { try { db.exec(sql); } catch (e) {} }
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_auditoria_emp_ts ON auditoria(empresa, ts)'); } catch (e) {}
@@ -225,7 +231,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS ix_cajamov_emp ON caja_chica_mov(empre
 // ---- Backfill: todos los datos preexistentes (empresa NULL) pasan a JMC ----
 const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancarias', 'tes_movimientos',
   'cartola_lineas', 'creditos', 'credito_cuotas', 'activos', 'activo_kilometrajes', 'activo_seguros',
-  'activo_documentos', 'flujo_proyeccion'];
+  'activo_documentos', 'activo_mantenciones', 'flujo_proyeccion'];
 (function backfillEmpresa() {
   const done = db.prepare("SELECT valor FROM _meta WHERE clave='backfill_empresa'").get();
   if (done) return;

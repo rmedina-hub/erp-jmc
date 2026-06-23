@@ -127,7 +127,7 @@ async function vDashboard() {
     </div>
     <div class="grid g2">
       <div class="card"><h3>Cuentas bancarias</h3>${cuentas.length ? `<table><tr><th>Cuenta</th><th class="num">Saldo</th></tr>${cuentas.map(c => `<tr><td>${esc(c.banco)} - ${esc(c.nombre)}</td><td class="num">${clp(c.saldo_actual)}</td></tr>`).join('')}</table>` : '<div class="empty">Sin cuentas</div>'}</div>
-      <div class="card"><h3>Alertas de vencimiento</h3>${alertas.length ? `<table><tr><th>Activo</th><th>Detalle</th><th>Vence</th><th>Estado</th></tr>${alertas.slice(0,8).map(a => `<tr><td>${esc(a.activo)}</td><td>${esc(a.detalle)}</td><td>${fdate(a.fecha_vencimiento)}</td><td><span class="pill ${a.estado==='VENCIDO'?'no':'warn'}">${a.estado}</span></td></tr>`).join('')}</table>` : '<div class="empty">Sin vencimientos proximos</div>'}</div>
+      <div class="card"><h3>Alertas de vencimiento</h3>${alertas.length ? `<table><tr><th>Activo</th><th>Detalle</th><th>Vence</th><th>Estado</th></tr>${alertas.slice(0,8).map(a => `<tr><td>${esc(a.activo)}</td><td>${esc(a.detalle)}</td><td>${a.km?'<span class="muted">por km</span>':fdate(a.fecha_vencimiento)}</td><td><span class="pill ${a.estado==='VENCIDO'?'no':'warn'}">${a.estado}</span></td></tr>`).join('')}</table>` : '<div class="empty">Sin vencimientos proximos</div>'}</div>
     </div>
     <div class="card"><h3>Productos bajo stock minimo</h3>${(() => { const b = inv.items.filter(i => i.bajo_minimo); return b.length ? `<table><tr><th>SKU</th><th>Producto</th><th class="num">Stock</th><th class="num">Minimo</th></tr>${b.map(i => `<tr><td>${esc(i.sku)}</td><td>${esc(i.nombre)}</td><td class="num">${num(i.stock,2)}</td><td class="num">${num(i.stock_minimo,2)}</td></tr>`).join('')}</table>` : '<div class="empty">Todo el stock sobre el minimo</div>'; })()}</div>`;
 }
@@ -633,7 +633,7 @@ function renderActivos() {
     <table><tr><th>Categoria</th><th class="num">Cantidad</th><th class="num">Valor</th></tr>${resRows}<tr style="background:#dce6f2"><td><b>TOTAL</b></td><td class="num"><b>${all.length}</b></td><td class="num"><b>${clp(total)}</b></td></tr></table></div>
   <div class="card"><h3>Activos fijos <span><select id="actCat" onchange="actFiltroCat=this.value;renderActivos()" style="width:auto;min-width:170px">${['<option value="">Todas las categorias</option>'].concat(cats.map(c => `<option value="${esc(c)}" ${c === actFiltroCat ? 'selected' : ''}>${esc(c)}</option>`)).join('')}</select> <button class="btn" onclick="formActivo()">+ Nuevo activo</button></span></h3>
     <div class="scroll"><table><tr><th>Codigo</th><th>Nombre</th><th>Categoria</th><th>Estado</th><th>Proveedor</th><th>N&deg; factura</th><th class="num">Valor compra</th><th class="num">Km</th><th></th></tr>
-    ${list.length ? list.map(x => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.nombre)}</td><td>${esc(x.categoria||'')}</td><td>${estadoPillActivo(x.estado)}</td><td>${esc(x.proveedor||'')}</td><td>${esc(x.factura||'')}</td><td class="num">${clp(x.valor_compra)}</td><td class="num">${x.km_actual!=null?num(x.km_actual,0):'-'}</td><td><button class="btn sm ghost" onclick="verActivo(${x.id})">Ficha</button> <button class="btn sm ghost" onclick="editarActivo(${x.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin activos en esta categoria</td></tr>'}</table></div></div>`;
+    ${list.length ? list.map(x => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.nombre)}</td><td>${esc(x.categoria||'')}</td><td>${estadoPillActivo(x.estado)}</td><td>${esc(x.proveedor||'')}</td><td>${esc(x.factura||'')}</td><td class="num">${clp(x.valor_compra)}</td><td class="num">${x.km_actual!=null?num(x.km_actual,0):'-'} ${mantBadge(x)}</td><td><button class="btn sm ghost" onclick="verActivo(${x.id})">Ficha</button> <button class="btn sm ghost" onclick="editarActivo(${x.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin activos en esta categoria</td></tr>'}</table></div></div>`;
 }
 function formActivo() {
   modal(`<h3>Nuevo activo</h3>
@@ -647,11 +647,12 @@ function formActivo() {
     <div class="row"><div class="field"><label><input type="checkbox" id="aDep"> Depreciable</label></div>
       <div class="field"><label>Vida util (meses)</label><input id="aVida" type="number" value="0"></div>
       <div class="field"><label>Valor residual</label><input id="aResid" type="number" value="0"></div></div>
+    <div class="row"><div class="field"><label>Intervalo mantencion (km)</label><input id="aMantInt" type="number" value="0" placeholder="0 = usar 10.000 km"></div></div>
     <div class="err" id="aErr"></div>
     <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarActivo()">Guardar</button></div>`);
 }
 async function guardarActivo() {
-  try { await api('POST', '/activos', { codigo: val('aCod'), nombre: val('aNom'), categoria: val('aCat'), estado: val('aEstado'), proveedor: val('aProv'), factura: val('aFact'), patente: val('aPat'), marca: val('aMarca'), modelo: val('aMod'), fecha_compra: val('aFecha'), valor_compra: val('aValor'), depreciable: document.getElementById('aDep') && document.getElementById('aDep').checked ? 1 : 0, vida_util_meses: val('aVida'), valor_residual: val('aResid') }); closeModal(); actLista(); }
+  try { await api('POST', '/activos', { codigo: val('aCod'), nombre: val('aNom'), categoria: val('aCat'), estado: val('aEstado'), proveedor: val('aProv'), factura: val('aFact'), patente: val('aPat'), marca: val('aMarca'), modelo: val('aMod'), fecha_compra: val('aFecha'), valor_compra: val('aValor'), depreciable: document.getElementById('aDep') && document.getElementById('aDep').checked ? 1 : 0, vida_util_meses: val('aVida'), valor_residual: val('aResid'), mantencion_intervalo_km: val('aMantInt') }); closeModal(); actLista(); }
   catch (e) { $('#aErr').textContent = e.message; }
 }
 async function editarActivo(id) {
@@ -666,12 +667,13 @@ async function editarActivo(id) {
     <div class="row"><div class="field"><label>Proveedor</label><input id="eaProv" value="${esc(a.proveedor||'')}"></div><div class="field"><label>N&deg; factura</label><input id="eaFact" value="${esc(a.factura||'')}"></div></div>
     <div class="row"><div class="field"><label>Patente</label><input id="eaPat" value="${esc(a.patente||'')}"></div><div class="field"><label>Valor compra</label><input id="eaValor" type="number" value="${a.valor_compra||0}"></div></div>
     <div class="row"><div class="field"><label>Marca</label><input id="eaMarca" value="${esc(a.marca||'')}"></div><div class="field"><label>Modelo</label><input id="eaMod" value="${esc(a.modelo||'')}"></div></div>
-    <div class="row"><div class="field"><label>Fecha compra</label><input id="eaFecha" type="date" value="${a.fecha_compra||''}"></div></div>
+    <div class="row"><div class="field"><label>Fecha compra</label><input id="eaFecha" type="date" value="${a.fecha_compra||''}"></div>
+      <div class="field"><label>Intervalo mantencion (km)</label><input id="eaMantInt" type="number" value="${a.mantencion_intervalo_km||0}" placeholder="0 = usar 10.000 km"></div></div>
     <div class="err" id="eaErr"></div>
     <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarEdicionActivo(${id})">Guardar</button></div>`);
 }
 async function guardarEdicionActivo(id) {
-  try { await api('PUT', '/activos/' + id, { codigo: val('eaCod'), nombre: val('eaNom'), categoria: val('eaCat'), estado: val('eaEstado'), proveedor: val('eaProv'), factura: val('eaFact'), patente: val('eaPat'), valor_compra: val('eaValor'), marca: val('eaMarca'), modelo: val('eaMod'), fecha_compra: val('eaFecha') }); closeModal(); actLista(); }
+  try { await api('PUT', '/activos/' + id, { codigo: val('eaCod'), nombre: val('eaNom'), categoria: val('eaCat'), estado: val('eaEstado'), proveedor: val('eaProv'), factura: val('eaFact'), patente: val('eaPat'), valor_compra: val('eaValor'), marca: val('eaMarca'), modelo: val('eaMod'), fecha_compra: val('eaFecha'), mantencion_intervalo_km: val('eaMantInt') }); closeModal(); actLista(); }
   catch (e) { $('#eaErr').textContent = e.message; }
 }
 async function verActivo(id) {
@@ -679,7 +681,7 @@ async function verActivo(id) {
   modal(`<h3>${esc(a.nombre)} <span class="muted">${esc(a.codigo)} · ${esc(a.patente||'')}</span></h3>
     <p class="muted" style="margin-top:-6px">${estadoPillActivo(a.estado)} · ${esc(a.categoria||'')} · Valor ${clp(a.valor_compra)}${a.proveedor?' · Prov: '+esc(a.proveedor):''}${a.factura?' · Factura '+esc(a.factura):''}</p>
     <div id="aDepr" class="muted" style="font-size:12px;margin-top:-4px"></div>
-    <div class="tabs"><button class="active" onclick="actSub(event,'km',${id})">Kilometrajes</button><button onclick="actSub(event,'seg',${id})">Seguros</button><button onclick="actSub(event,'doc',${id})">Documentos</button></div>
+    <div class="tabs"><button class="active" onclick="actSub(event,'km',${id})">Kilometrajes</button><button onclick="actSub(event,'seg',${id})">Seguros</button><button onclick="actSub(event,'doc',${id})">Documentos</button><button onclick="actSub(event,'mant',${id})">Mantenciones</button></div>
     <div id="aSub"></div>
     <div class="right" style="margin-top:14px">${USER.rol === 'admin' ? `<button class="btn red" onclick="delActivo(${id})">Enviar a papelera</button> ` : ''}<button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
   window._activo = a; renderSub('km', id);
@@ -695,10 +697,18 @@ async function renderSub(t, id) {
     $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Compania</label><input id="sgC"></div><div class="field"><label>Poliza</label><input id="sgP"></div></div>
       <div class="row"><div class="field"><label>Inicio</label><input id="sgI" type="date"></div><div class="field"><label>Vencimiento</label><input id="sgV" type="date"></div><div class="field"><label>Prima</label><input id="sgPr" type="number"></div><button class="btn" onclick="addSeguro(${id})">+ Agregar</button></div>
       <table style="margin-top:12px"><tr><th>Compania</th><th>Poliza</th><th>Vence</th><th class="num">Prima</th><th>PDF</th><th></th></tr>${a.seguros.length ? a.seguros.map(s => `<tr><td>${esc(s.compania||'')}</td><td>${esc(s.poliza||'')}</td><td>${fdate(s.fecha_vencimiento)} ${venceBadge(s.fecha_vencimiento)}</td><td class="num">${clp(s.prima)}</td><td>${pdfCell('seguros',s,id)}</td><td><button class="btn sm red" onclick="delSub('seguros',${s.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin seguros</td></tr>'}</table>`;
-  } else {
-    $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Tipo</label><select id="dcT"><option>SOAP</option><option>PERMISO_CIRCULACION</option><option>REVISION_TECNICA</option><option>SEGURO_OBLIGATORIO</option><option>PADRON</option><option>PRIMERA_INSCRIPCION</option><option>OTRO</option></select></div><div class="field"><label>Numero</label><input id="dcN"></div></div>
+  } else if (t === 'doc') {
+    $('#aSub').innerHTML = `<div class="row"><div class="field"><label>Tipo</label><select id="dcT"><option>SOAP</option><option>PERMISO_CIRCULACION</option><option>REVISION_TECNICA</option><option>EMISIONES_CONTAMINANTES</option><option>SEGURO_OBLIGATORIO</option><option>PADRON</option><option>PRIMERA_INSCRIPCION</option><option>OTRO</option></select></div><div class="field"><label>Numero</label><input id="dcN"></div></div>
       <div class="row"><div class="field"><label>Emision</label><input id="dcE" type="date"></div><div class="field"><label>Vencimiento</label><input id="dcV" type="date"></div><button class="btn" onclick="addDoc(${id})">+ Agregar</button></div>
       <table style="margin-top:12px"><tr><th>Tipo</th><th>Numero</th><th>Vence</th><th>PDF</th><th></th></tr>${a.documentos.length ? a.documentos.map(d => `<tr><td>${esc(d.tipo)}</td><td>${esc(d.numero||'')}</td><td>${(['PADRON','PRIMERA_INSCRIPCION'].includes(d.tipo) || !d.fecha_vencimiento) ? '<span class="muted">No vence</span>' : fdate(d.fecha_vencimiento) + ' ' + venceBadge(d.fecha_vencimiento)}</td><td>${pdfCell('documentos',d,id)}</td><td><button class="btn sm red" onclick="delSub('documentos',${d.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="5" class="empty">Sin documentos</td></tr>'}</table>`;
+  } else if (t === 'mant') {
+    const mi = a.mantencion || {};
+    const eb = mi.estado === 'VENCIDA' ? '<span class="pill no">Mantencion vencida</span>' : mi.estado === 'POR_VENCER' ? '<span class="pill warn">Mantencion proxima</span>' : mi.estado === 'OK' ? '<span class="pill ok">Al dia</span>' : '<span class="muted">Sin datos (registra una mantencion)</span>';
+    $('#aSub').innerHTML = `<div class="muted" style="margin-bottom:8px">Intervalo: ${mi.intervalo ? num(mi.intervalo,0) : '10.000'} km &middot; Km actual: ${mi.km_actual!=null?num(mi.km_actual,0):'-'} &middot; Proxima a: ${mi.proximo_km!=null?num(mi.proximo_km,0)+' km':'-'} ${mi.km_restante!=null?'&middot; faltan '+num(mi.km_restante,0)+' km':''} ${eb}</div>
+      <div class="row"><div class="field"><label>Fecha</label><input id="mtF" type="date" value="${hoy()}"></div><div class="field"><label>Km</label><input id="mtK" type="number" value="${mi.km_actual!=null?mi.km_actual:''}"></div><div class="field"><label>Tipo</label><input id="mtT" placeholder="Cambio de aceite, filtros..."></div></div>
+      <div class="row"><div class="field"><label>Costo</label><input id="mtC" type="number"></div><div class="field"><label>Proximo km (opcional)</label><input id="mtP" type="number" placeholder="auto: km + intervalo"></div><div class="field"><label>Glosa</label><input id="mtG"></div><button class="btn" onclick="addMant(${id})">+ Registrar</button></div>
+      <p class="muted" style="font-size:12px">El intervalo de km se configura al editar el activo. La alerta avisa 500 km antes (o si ya se paso).</p>
+      <table style="margin-top:12px"><tr><th>Fecha</th><th class="num">Km</th><th>Tipo</th><th class="num">Costo</th><th class="num">Prox. km</th><th>PDF</th><th></th></tr>${a.mantenciones.length ? a.mantenciones.map(m => `<tr><td>${fdate(m.fecha)}</td><td class="num">${m.km!=null?num(m.km,0):'-'}</td><td>${esc(m.tipo||'')}</td><td class="num">${m.costo?clp(m.costo):'-'}</td><td class="num">${m.proximo_km!=null?num(m.proximo_km,0):'-'}</td><td>${pdfCell('mantenciones',m,id)}</td><td><button class="btn sm red" onclick="delSub('mantenciones',${m.id},${id})">x</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin mantenciones</td></tr>'}</table>`;
   }
 }
 function venceBadge(f) {
@@ -712,6 +722,8 @@ function venceBadge(f) {
 async function addKm(id) { await api('POST', `/activos/${id}/kilometrajes`, { fecha: val('kmF'), km: val('kmV'), glosa: val('kmG') }); verActivo(id); }
 async function addSeguro(id) { await api('POST', `/activos/${id}/seguros`, { compania: val('sgC'), poliza: val('sgP'), fecha_inicio: val('sgI'), fecha_vencimiento: val('sgV'), prima: val('sgPr') }); verActivo(id); }
 async function addDoc(id) { await api('POST', `/activos/${id}/documentos`, { tipo: val('dcT'), numero: val('dcN'), fecha_emision: val('dcE'), fecha_vencimiento: val('dcV') }); verActivo(id); }
+async function addMant(id) { await api('POST', `/activos/${id}/mantenciones`, { fecha: val('mtF'), km: val('mtK'), tipo: val('mtT'), costo: val('mtC'), proximo_km: val('mtP'), glosa: val('mtG') }); verActivo(id); }
+function mantBadge(x) { if (x.mant_estado === 'VENCIDA') return '<span class="pill no" title="Mantencion vencida">mant!</span>'; if (x.mant_estado === 'POR_VENCER') return '<span class="pill warn" title="Mantencion proxima">mant</span>'; return ''; }
 async function delSub(tipo, sid, aid) { await api('DELETE', `/activos/${tipo}/${sid}`); verActivo(aid); }
 async function delActivo(id) { if (confirm('Enviar este activo a la papelera? Podras restaurarlo despues.')) { await api('DELETE', '/activos/' + id); closeModal(); actLista(); } }
 async function actPapelera() {
@@ -759,7 +771,7 @@ async function actAlertas() {
   const al = await api('GET', '/activos/alertas/vencimientos?dias=60');
   $('#actBody').innerHTML = `<div class="card"><h3>Vencimientos proximos (60 dias) y vencidos</h3>
     <table><tr><th>Tipo</th><th>Activo</th><th>Patente</th><th>Detalle</th><th>Vence</th><th>Estado</th></tr>
-    ${al.length ? al.map(x => `<tr><td>${x.clase}</td><td>${esc(x.activo)}</td><td>${esc(x.patente||'')}</td><td>${esc(x.detalle)}</td><td>${fdate(x.fecha_vencimiento)}</td><td><span class="pill ${x.estado==='VENCIDO'?'no':'warn'}">${x.estado}</span></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin vencimientos proximos</td></tr>'}</table></div>`;
+    ${al.length ? al.map(x => `<tr><td>${x.clase}</td><td>${esc(x.activo)}</td><td>${esc(x.patente||'')}</td><td>${esc(x.detalle)}</td><td>${x.km?'<span class="muted">por km</span>':fdate(x.fecha_vencimiento)}</td><td><span class="pill ${x.estado==='VENCIDO'?'no':'warn'}">${x.estado}</span></td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin vencimientos proximos</td></tr>'}</table></div>`;
 }
 
 // ===================== USUARIOS =====================
