@@ -607,7 +607,7 @@ async function delCredito(id) { if (confirm('Eliminar credito y su tabla?')) { a
 // ===================== ACTIVOS =====================
 let actTab = 'activos';
 async function vActivos() {
-  C().innerHTML = `<div class="tabs"><button data-t="activos">Activos</button><button data-t="alertas">Alertas de vencimiento</button>${USER.rol === 'admin' ? '<button data-t="papelera">Papelera</button>' : ''}</div><div id="actBody"></div>`;
+  C().innerHTML = `<div class="tabs"><button data-t="activos">Activos</button><button data-t="alertas">Alertas de vencimiento</button></div><div id="actBody"></div>`;
   C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { actTab = b.dataset.t; renderActTabs(); }));
   renderActTabs();
 }
