@@ -867,28 +867,37 @@ function renderDetalleCategorias(ev) {
 }
 async function fjProy() {
   const items = await api('GET', '/flujo/proyeccion');
+  window._proyItems = items;
   $('#fjBody').innerHTML = `<div class="card"><h3>Movimientos proyectados <button class="btn" onclick="formProy()">+ Nuevo movimiento</button></h3>
     <p class="muted" style="margin-bottom:10px">Las cuotas de creditos pendientes se proyectan automaticamente como egresos de financiamiento.</p>
-    <div class="scroll"><table><tr><th>Fecha</th><th>Tipo</th><th>Actividad</th><th>Descripcion</th><th>Cliente</th><th class="num">Monto</th><th class="num">Prob.</th><th>Extra/Var.</th><th></th></tr>
-    ${items.length ? items.map(i => `<tr><td>${fdate(i.fecha)}</td><td><span class="pill ${i.tipo === 'INGRESO' ? 'ok' : 'no'}">${i.tipo}</span></td><td>${i.actividad}</td><td>${esc(i.descripcion || '')}</td><td>${esc(i.cliente || '')}</td><td class="num">${clp(i.monto)}</td><td class="num">${i.probabilidad}%</td><td>${i.extra_contable ? '<span class="pill warn">Si</span>' : ''}</td><td><button class="btn sm red" onclick="delProy(${i.id})">x</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin proyecciones</td></tr>'}
+    <div class="scroll"><table><tr><th>Fecha</th><th>Tipo</th><th>Actividad</th><th>Categoria</th><th>Descripcion</th><th>Cliente</th><th class="num">Monto</th><th class="num">Prob.</th><th>Extra/Var.</th><th></th></tr>
+    ${items.length ? items.map(i => `<tr><td>${fdate(i.fecha)}</td><td><span class="pill ${i.tipo === 'INGRESO' ? 'ok' : 'no'}">${i.tipo}</span></td><td>${i.actividad}</td><td>${esc(i.categoria || '')}</td><td>${esc(i.descripcion || '')}</td><td>${esc(i.cliente || '')}</td><td class="num">${clp(i.monto)}</td><td class="num">${i.probabilidad}%</td><td>${i.extra_contable ? '<span class="pill warn">Si</span>' : ''}</td><td><button class="btn sm" onclick="editarProy(${i.id})">Editar</button> <button class="btn sm red" onclick="delProy(${i.id})">x</button></td></tr>`).join('') : '<tr><td colspan="10" class="empty">Sin proyecciones</td></tr>'}
     </table></div></div>`;
 }
-function formProy() {
-  modal(`<h3>Nuevo movimiento proyectado</h3>
-    <div class="row"><div class="field"><label>Fecha</label><input id="fpF" type="date" value="${hoy()}"></div>
+function editarProy(id) { formProy((window._proyItems || []).find(x => x.id === id)); }
+function formProy(mov) {
+  modal(`<h3>${mov ? 'Editar' : 'Nuevo'} movimiento proyectado</h3>
+    <div class="row"><div class="field"><label>Fecha</label><input id="fpF" type="date" value="${mov ? fdate(mov.fecha) : hoy()}"></div>
       <div class="field"><label>Tipo</label><select id="fpT" onchange="catProyOpts()"><option value="INGRESO">INGRESO</option><option value="EGRESO">EGRESO</option></select></div></div>
     <div class="row"><div class="field"><label>Actividad</label><select id="fpA"><option value="OPERACIONAL">Operacional</option><option value="INVERSION">Inversion</option><option value="FINANCIAMIENTO">Financiamiento</option></select></div>
       <div class="field"><label>Categoria (concepto de flujo)</label><select id="fpC" onchange="catProyToggle()"></select></div></div>
     <div class="row" id="fpCOtroRow" style="display:none"><div class="field"><label>Especificar categoria</label><input id="fpCOtro"></div></div>
-    <div class="row"><div class="field"><label>Descripcion</label><input id="fpD"></div></div>
-    <div class="row"><div class="field"><label>Monto</label><input id="fpM" type="number"></div>
-      <div class="field"><label>Probabilidad de ocurrencia (%)</label><input id="fpP" type="number" value="100"></div></div>
-    <div class="row"><div class="field"><label>Cliente (opcional)</label><input id="fpCl"></div>
-      <div class="field"><label>Movimiento</label><label style="font-weight:400;display:block;padding-top:8px"><input type="checkbox" id="fpE" style="width:auto"> Extra contable / variable</label></div></div>
+    <div class="row"><div class="field"><label>Descripcion</label><input id="fpD" value="${mov ? esc(mov.descripcion || '') : ''}"></div></div>
+    <div class="row"><div class="field"><label>Monto</label><input id="fpM" type="number" value="${mov ? mov.monto : ''}"></div>
+      <div class="field"><label>Probabilidad de ocurrencia (%)</label><input id="fpP" type="number" value="${mov ? mov.probabilidad : 100}"></div></div>
+    <div class="row"><div class="field"><label>Cliente (opcional)</label><input id="fpCl" value="${mov ? esc(mov.cliente || '') : ''}"></div>
+      <div class="field"><label>Movimiento</label><label style="font-weight:400;display:block;padding-top:8px"><input type="checkbox" id="fpE" style="width:auto" ${mov && mov.extra_contable ? 'checked' : ''}> Extra contable / variable</label></div></div>
     <p class="muted" style="font-size:12px">La categoria define donde aparece el movimiento en el Flujo de caja (informe y planilla).</p>
     <div class="err" id="fpErr"></div>
-    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarProy()">Guardar</button></div>`);
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarProy(${mov ? mov.id : 0})">Guardar</button></div>`);
+  if (mov) { document.getElementById('fpT').value = mov.tipo; document.getElementById('fpA').value = mov.actividad || 'OPERACIONAL'; }
   catProyOpts();
+  if (mov && mov.categoria) {
+    const lista = CATS_FLUJO[mov.tipo] || [];
+    if (lista.includes(mov.categoria)) { document.getElementById('fpC').value = mov.categoria; }
+    else { document.getElementById('fpC').value = '__otro'; document.getElementById('fpCOtro').value = mov.categoria; }
+    catProyToggle();
+  }
 }
 function catProyOpts() {
   const tipo = val('fpT');
@@ -899,10 +908,11 @@ function catProyOpts() {
 function catProyToggle() {
   const row = document.getElementById('fpCOtroRow'); if (row) row.style.display = (val('fpC') === '__otro') ? '' : 'none';
 }
-async function guardarProy() {
+async function guardarProy(id) {
   const cat = val('fpC') === '__otro' ? val('fpCOtro') : val('fpC');
+  const body = { fecha: val('fpF'), tipo: val('fpT'), actividad: val('fpA'), categoria: cat, descripcion: val('fpD'), monto: val('fpM'), probabilidad: val('fpP'), cliente: val('fpCl'), extra_contable: document.getElementById('fpE').checked };
   try {
-    await api('POST', '/flujo/proyeccion', { fecha: val('fpF'), tipo: val('fpT'), actividad: val('fpA'), categoria: cat, descripcion: val('fpD'), monto: val('fpM'), probabilidad: val('fpP'), cliente: val('fpCl'), extra_contable: document.getElementById('fpE').checked });
+    if (id) await api('PUT', '/flujo/proyeccion/' + id, body); else await api('POST', '/flujo/proyeccion', body);
     closeModal(); fjProy();
   } catch (e) { $('#fpErr').textContent = e.message; }
 }

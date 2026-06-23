@@ -120,6 +120,18 @@ router.post('/proyeccion', (req, res) => {
   audit(req, 'Flujo', 'Proyeccion ' + b.tipo, (b.descripcion || b.categoria || '') + ' ' + Math.abs(Number(b.monto)));
   res.json(db.prepare('SELECT * FROM flujo_proyeccion WHERE id=?').get(r.lastInsertRowid));
 });
+router.put('/proyeccion/:id', (req, res) => {
+  const ex = db.prepare('SELECT * FROM flujo_proyeccion WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
+  if (!ex) return res.status(404).json({ error: 'No existe' });
+  const b = req.body;
+  if (!b.fecha || !b.tipo || !b.monto) return res.status(400).json({ error: 'fecha, tipo y monto requeridos' });
+  db.prepare(`UPDATE flujo_proyeccion SET fecha=?,tipo=?,actividad=?,categoria=?,descripcion=?,monto=?,probabilidad=?,cliente=?,extra_contable=? WHERE id=? AND empresa=?`)
+    .run(b.fecha, b.tipo, b.actividad || 'OPERACIONAL', b.categoria || null, b.descripcion || null,
+      Math.abs(Number(b.monto)) || 0, b.probabilidad == null ? 100 : Number(b.probabilidad), b.cliente || null, b.extra_contable ? 1 : 0,
+      req.params.id, req.empresa);
+  audit(req, 'Flujo', 'Editar proyeccion', 'id ' + req.params.id + ' ' + (b.descripcion || b.categoria || ''));
+  res.json(db.prepare('SELECT * FROM flujo_proyeccion WHERE id=?').get(req.params.id));
+});
 router.delete('/proyeccion/:id', (req, res) => {
   const r = db.prepare('SELECT id FROM flujo_proyeccion WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
   if (!r) return res.status(404).json({ error: 'No existe' });
