@@ -1,9 +1,9 @@
 const express = require('express');
 const db = require('./db');
-const { auth, noBodeguero, admin } = require('./auth');
+const { auth, noBodeguero, admin, soloAdminDelete } = require('./auth');
 const { audit } = require('./audit');
 const router = express.Router();
-router.use(auth, noBodeguero); // modulo de oficina
+router.use(auth, noBodeguero, soloAdminDelete); // modulo de oficina
 
 const r2 = (x) => Math.round(Number(x) || 0);
 function nextNum(table, empresa) {

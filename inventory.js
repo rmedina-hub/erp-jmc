@@ -1,9 +1,9 @@
 const express = require('express');
 const db = require('./db');
-const { auth } = require('./auth');
+const { auth, soloAdminDelete } = require('./auth');
 const { audit } = require('./audit');
 const router = express.Router();
-router.use(auth);
+router.use(auth, soloAdminDelete);
 
 // El bodeguero queda atado a su bodega
 function bodegaFija(req) { return req.user && req.user.rol === 'bodeguero' ? (req.user.bodega_id || 0) : null; }

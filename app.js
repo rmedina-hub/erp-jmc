@@ -37,6 +37,7 @@ function activeEmpresa() {
   try { return (typeof currentBrand !== 'undefined' && currentBrand) ? currentBrand.id : (localStorage.getItem('erp_empresa') || 'jmc'); } catch { return 'jmc'; }
 }
 async function api(method, path, body) {
+  if (method === 'PUT' && !window._sinConfirmar) { if (!window.confirm('¿Desea que los cambios se realicen?')) { const e = new Error('Cambios cancelados'); e._cancel = true; throw e; } }
   const opt = { method, headers: {} };
   if (TOKEN) opt.headers['Authorization'] = 'Bearer ' + TOKEN;
   opt.headers['X-Empresa'] = activeEmpresa();
@@ -70,8 +71,24 @@ async function doLogin(e) {
     if (USER.empresa && BRANDS[USER.empresa]) selectEmpresa(USER.empresa);
     const _sw = document.getElementById('empresaSwitch');
     if (_sw) _sw.style.display = (!USER.empresa) ? '' : 'none';
+    activarOcultarBorrar();
     go(USER.rol === 'bodeguero' ? 'inventario' : 'dashboard');
   } catch (err) { $('#liErr').textContent = err.message; }
+}
+function ocultarAccionesBorrar() {
+  if (!USER || USER.rol === 'admin') return;
+  document.querySelectorAll('button[onclick], label[onclick]').forEach(b => {
+    const oc = b.getAttribute('onclick') || '';
+    if (/^\s*(del|borrar)/i.test(oc) || /\beliminar\b|\bborrar\b/i.test(b.textContent || '')) b.style.display = 'none';
+  });
+}
+let _moBorrar = null;
+function activarOcultarBorrar() {
+  if (!USER || USER.rol === 'admin') return;
+  ocultarAccionesBorrar();
+  if (_moBorrar) return;
+  _moBorrar = new MutationObserver(() => ocultarAccionesBorrar());
+  _moBorrar.observe(document.body, { childList: true, subtree: true });
 }
 async function logout() { try { await api('POST', '/usuarios/logout', {}); } catch (e) {} TOKEN = null; USER = null; location.reload(); }
 
@@ -178,12 +195,13 @@ async function guardarMov() {
 }
 async function invProductos() {
   const prods = await api('GET', '/inventario/productos');
+  window._prodList = prods;
   $('#invBody').innerHTML = `<div class="card"><h3>Productos <button class="btn" onclick="formProd()">+ Nuevo producto</button></h3>
     <div class="scroll"><table><tr><th>Foto</th><th>SKU</th><th>Nombre</th><th>Unidad</th><th class="num">Stock</th><th class="num">PMP</th><th class="num">Stock min</th><th></th></tr>
     ${prods.length ? prods.map(p => `<tr>
       <td>${p.tiene_foto ? `<img id="fp_${p.id}" alt="" style="width:40px;height:40px;object-fit:cover;border-radius:6px;cursor:pointer;background:#eee" onclick="verFotoProd(${p.id})">` : '<span class="muted">—</span>'}</td>
       <td>${esc(p.sku)}</td><td>${esc(p.nombre)}</td><td>${esc(p.unidad)}</td><td class="num">${num(p.stock,2)}</td><td class="num">${clp(p.costo_promedio)}</td><td class="num">${num(p.stock_minimo,2)}</td>
-      <td><label class="btn sm ghost" style="cursor:pointer;margin:0">${p.tiene_foto?'cambiar foto':'subir foto'}<input type="file" accept="image/*" style="display:none" onchange="subirFotoProd(${p.id},this)"></label></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Sin productos</td></tr>'}</table></div></div>`;
+      <td><button class="btn sm ghost" onclick="editarProd(${p.id})">Editar</button> <label class="btn sm ghost" style="cursor:pointer;margin:0">${p.tiene_foto?'cambiar foto':'subir foto'}<input type="file" accept="image/*" style="display:none" onchange="subirFotoProd(${p.id},this)"></label></td></tr>`).join('') : '<tr><td colspan="8" class="empty">Sin productos</td></tr>'}</table></div></div>`;
   prods.filter(p => p.tiene_foto).forEach(p => cargarFotoProd(p.id));
 }
 async function cargarFotoProd(id) {
@@ -200,17 +218,21 @@ async function subirFotoProd(id, input) {
   rd.onload = async () => { try { await api('POST', '/inventario/productos/' + id + '/foto', { nombre: f.name, mime: f.type || 'image/jpeg', base64: String(rd.result).split(',')[1] }); invProductos(); } catch (e) { alert('Error al subir: ' + e.message); } };
   rd.readAsDataURL(f);
 }
-function formProd() {
-  modal(`<h3>Nuevo producto</h3>
-    <div class="row"><div class="field"><label>SKU</label><input id="pSku"></div><div class="field"><label>Unidad</label><input id="pUni" value="UN"></div></div>
-    <div class="row"><div class="field"><label>Nombre</label><input id="pNom"></div></div>
-    <div class="row"><div class="field"><label>Stock minimo</label><input id="pMin" type="number" step="0.01" value="0"></div></div>
+function editarProd(id) { formProd((window._prodList || []).find(x => x.id === id)); }
+function formProd(p) {
+  modal(`<h3>${p ? 'Editar producto' : 'Nuevo producto'}</h3>
+    <div class="row"><div class="field"><label>SKU</label><input id="pSku" value="${p ? esc(p.sku) : ''}" ${p ? 'readonly style="background:#f1f1f1"' : ''}></div><div class="field"><label>Unidad</label><input id="pUni" value="${p ? esc(p.unidad) : 'UN'}"></div></div>
+    <div class="row"><div class="field"><label>Nombre</label><input id="pNom" value="${p ? esc(p.nombre) : ''}"></div></div>
+    <div class="row"><div class="field"><label>Stock minimo</label><input id="pMin" type="number" step="0.01" value="${p ? p.stock_minimo : 0}"></div></div>
     <div class="err" id="pErr"></div>
-    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarProd()">Guardar</button></div>`);
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarProd(${p ? p.id : 0})">Guardar</button></div>`);
 }
-async function guardarProd() {
-  try { await api('POST', '/inventario/productos', { sku: val('pSku'), nombre: val('pNom'), unidad: val('pUni'), stock_minimo: val('pMin') }); closeModal(); invProductos(); }
-  catch (e) { $('#pErr').textContent = e.message; }
+async function guardarProd(id) {
+  try {
+    if (id) await api('PUT', '/inventario/productos/' + id, { nombre: val('pNom'), unidad: val('pUni'), stock_minimo: val('pMin'), activo: 1 });
+    else await api('POST', '/inventario/productos', { sku: val('pSku'), nombre: val('pNom'), unidad: val('pUni'), stock_minimo: val('pMin') });
+    closeModal(); invProductos();
+  } catch (e) { if (!e._cancel) $('#pErr').textContent = e.message; }
 }
 const TIPOS_BODEGA = { CENTRAL: 'Central', LAMPA: 'Lampa', OBRA: 'En obra' };
 async function invBodegas() {

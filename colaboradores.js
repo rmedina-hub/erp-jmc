@@ -1,9 +1,9 @@
 const express = require('express');
 const db = require('./db');
-const { auth } = require('./auth');
+const { auth, soloAdminDelete } = require('./auth');
 const { audit } = require('./audit');
 const router = express.Router();
-router.use(auth);
+router.use(auth, soloAdminDelete);
 
 router.get('/', (req, res) => {
   res.json(db.prepare('SELECT * FROM colaboradores WHERE empresa=? ORDER BY apellido, nombre').all(req.empresa));

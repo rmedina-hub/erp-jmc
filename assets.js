@@ -1,9 +1,9 @@
 const express = require('express');
 const db = require('./db');
-const { auth, noBodeguero, admin } = require('./auth');
+const { auth, noBodeguero, admin, soloAdminDelete } = require('./auth');
 const { audit } = require('./audit');
 const router = express.Router();
-router.use(auth, noBodeguero);
+router.use(auth, noBodeguero, soloAdminDelete);
 
 function activoDeEmpresa(id, empresa) {
   return db.prepare('SELECT * FROM activos WHERE id=? AND empresa=?').get(id, empresa);

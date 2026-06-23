@@ -30,6 +30,12 @@ function auth(req, res, next) {
   }
 }
 
+function soloAdminDelete(req, res, next) {
+  if (req.method === 'DELETE' && (!req.user || req.user.rol !== 'admin'))
+    return res.status(403).json({ error: 'Solo un administrador puede eliminar registros' });
+  next();
+}
+
 function noBodeguero(req, res, next) {
   if (req.user && req.user.rol === 'bodeguero') return res.status(403).json({ error: 'Acceso restringido para el rol bodeguero' });
   next();
@@ -40,4 +46,4 @@ function admin(req, res, next) {
   next();
 }
 
-module.exports = { sign, auth, admin, noBodeguero, SECRET, EMPRESAS, resolverEmpresa };
+module.exports = { sign, auth, admin, noBodeguero, soloAdminDelete, SECRET, EMPRESAS, resolverEmpresa };

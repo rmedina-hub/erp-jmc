@@ -1,9 +1,9 @@
 const express = require('express');
 const db = require('./db');
-const { auth, noBodeguero } = require('./auth');
+const { auth, noBodeguero, soloAdminDelete } = require('./auth');
 const { audit } = require('./audit');
 const router = express.Router();
-router.use(auth, noBodeguero);
+router.use(auth, noBodeguero, soloAdminDelete);
 
 router.get('/', (req, res) => {
   const cajas = db.prepare('SELECT * FROM caja_chica WHERE empresa=? ORDER BY nombre').all(req.empresa);
