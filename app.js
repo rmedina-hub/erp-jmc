@@ -724,6 +724,7 @@ async function addSeguro(id) { await api('POST', `/activos/${id}/seguros`, { com
 async function addDoc(id) { await api('POST', `/activos/${id}/documentos`, { tipo: val('dcT'), numero: val('dcN'), fecha_emision: val('dcE'), fecha_vencimiento: val('dcV') }); verActivo(id); }
 async function addMant(id) { await api('POST', `/activos/${id}/mantenciones`, { fecha: val('mtF'), km: val('mtK'), tipo: val('mtT'), costo: val('mtC'), proximo_km: val('mtP'), glosa: val('mtG') }); verActivo(id); }
 function mantBadge(x) { if (x.mant_estado === 'VENCIDA') return '<span class="pill no" title="Mantencion vencida">mant!</span>'; if (x.mant_estado === 'POR_VENCER') return '<span class="pill warn" title="Mantencion proxima">mant</span>'; return ''; }
+function mantEstadoPill(a) { if (a.mant_estado === 'VENCIDA') return '<span class="pill no">Vencida' + (a.mant_km_restante!=null?' ('+num(Math.abs(a.mant_km_restante),0)+' km)':'') + '</span>'; if (a.mant_estado === 'POR_VENCER') return '<span class="pill warn">Proxima (faltan ' + num(a.mant_km_restante,0) + ' km)</span>'; if (a.mant_estado === 'OK') return '<span class="pill ok">Al dia</span>'; return '<span class="muted">Sin datos</span>'; }
 async function delSub(tipo, sid, aid) { await api('DELETE', `/activos/${tipo}/${sid}`); verActivo(aid); }
 async function delActivo(id) { if (confirm('Enviar este activo a la papelera? Podras restaurarlo despues.')) { await api('DELETE', '/activos/' + id); closeModal(); actLista(); } }
 async function actPapelera() {
@@ -1087,8 +1088,13 @@ async function delTercero(id) { if (confirm('Eliminar?')) { await api('DELETE', 
 
 // ===================== ARRIENDO DE MAQUINARIAS =====================
 async function vMaquinarias() {
-  const [ms, provs] = await Promise.all([api('GET', '/maquinarias'), api('GET', '/terceros?tipo=PROVEEDOR')]); window._maqs = ms; window._provsMaq = provs;
-  C().innerHTML = `<div class="card"><h3>Arriendo de maquinarias <button class="btn" onclick="formMaq()">+ Nuevo arriendo</button></h3>
+  const [ms, provs, activos] = await Promise.all([api('GET', '/maquinarias'), api('GET', '/terceros?tipo=PROVEEDOR'), api('GET', '/activos')]); window._maqs = ms; window._provsMaq = provs;
+  const maqProp = (activos || []).filter(a => (a.categoria || '').toUpperCase() === 'MAQUINARIA');
+  const panelMant = `<div class="card"><h3>Maquinaria propia &mdash; mantenciones</h3>
+    <p class="muted" style="margin-bottom:10px">Estado de mantencion por kilometraje de la maquinaria registrada en Activos fijos. Gestiona las mantenciones desde la ficha.</p>
+    <div class="scroll"><table><tr><th>Codigo</th><th>Maquina</th><th>Patente</th><th class="num">Km actual</th><th class="num">Proxima a</th><th>Mantencion</th><th></th></tr>
+    ${maqProp.length ? maqProp.map(a => `<tr><td>${esc(a.codigo)}</td><td>${esc(a.nombre)}</td><td>${esc(a.patente||'')}</td><td class="num">${a.km_actual!=null?num(a.km_actual,0):'-'}</td><td class="num">${a.mant_proximo_km!=null?num(a.mant_proximo_km,0):'-'}</td><td>${mantEstadoPill(a)}</td><td><button class="btn sm ghost" onclick="verActivo(${a.id})">Ficha</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin maquinaria propia registrada en Activos fijos</td></tr>'}</table></div></div>`;
+  C().innerHTML = panelMant + `<div class="card"><h3>Arriendo de maquinarias <button class="btn" onclick="formMaq()">+ Nuevo arriendo</button></h3>
     <div class="scroll"><table><tr><th>Maquina</th><th>Proveedor</th><th>Inicio</th><th>Fin</th><th>Periodo</th><th class="num">Costo</th><th>Obra</th><th>Estado</th><th></th></tr>
     ${ms.length ? ms.map(m => `<tr><td>${esc(m.maquina)}</td><td>${esc(m.proveedor||'')}</td><td>${fdate(m.fecha_inicio)}</td><td>${fdate(m.fecha_fin)}</td><td>${esc(m.periodo)}</td><td class="num">${clp(m.costo_periodo)}</td><td>${esc(m.obra||'')}</td><td>${m.estado === 'DEVUELTA' ? '<span class="pill ok">DEVUELTA</span>' : '<span class="pill warn">VIGENTE</span>'}</td><td>${m.estado !== 'DEVUELTA' ? `<button class="btn sm green" onclick="devolverMaq(${m.id})">Devolver</button> ` : ''}<button class="btn sm ghost" onclick="editarMaq(${m.id})">Editar</button> <button class="btn sm red" onclick="delMaq(${m.id})">x</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin arriendos</td></tr>'}</table></div></div>`;
 }
