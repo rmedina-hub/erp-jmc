@@ -169,7 +169,8 @@ let estadosTab = 'resultados', estadosMeses = 12;
 function vEstados() {
   C().innerHTML = `<div class="tabs">
     <button data-t="resultados">Estado de Resultados</button>
-    <button data-t="flujo">Flujo de Efectivo</button></div>
+    <button data-t="flujo">Flujo de Efectivo</button>
+    <button data-t="balance">Balance General</button></div>
     <div class="row" style="margin:10px 0"><div class="field" style="max-width:170px"><label>Periodo</label><select id="esMeses" onchange="estadosMeses=Number(this.value);renderEstados()"><option value="6">6 meses</option><option value="12">12 meses</option><option value="24">24 meses</option></select></div></div>
     <div id="esBody"></div>`;
   C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { estadosTab = b.dataset.t; renderEstadosTabs(); }));
@@ -198,7 +199,7 @@ async function renderEstados() {
       ${sumRow('Total egresos', x => x.totalEgresos, true)}
       <tr style="background:#dce6f2"><td><b>RESULTADO (utilidad/perdida)</b></td>${d.data.map(x => `<td class="num" style="color:${x.resultado < 0 ? 'var(--rojo)' : 'inherit'}"><b>${clp(x.resultado)}</b></td>`).join('')}<td class="num"><b>${clp(d.data.reduce((a, x) => a + x.resultado, 0))}</b></td></tr>
       </table></div></div>`;
-  } else {
+  } else if (estadosTab === 'flujo') {
     const d = await api('GET', '/estados/flujo-efectivo?meses=' + estadosMeses);
     const M = d.meses;
     const r = (lbl, key, bold, color) => `<tr${bold ? ' style="background:#f4f7fb;font-weight:600"' : ''}><td>${lbl}</td>${d.data.map(x => `<td class="num"${color && x[key] < 0 ? ' style="color:var(--rojo)"' : ''}>${clp(x[key])}</td>`).join('')}</tr>`;
@@ -211,6 +212,30 @@ async function renderEstados() {
       ${r('Flujo de financiacion', 'financiacion', false, true)}
       ${r('= Flujo neto del mes', 'flujoNeto', true, true)}
       <tr style="background:#dce6f2"><td><b>Saldo final</b></td>${d.data.map(x => `<td class="num"><b>${clp(x.saldoFinal)}</b></td>`).join('')}</tr>
+      </table></div></div>`;
+  } else {
+    const d = await api('GET', '/estados/balance?meses=' + estadosMeses);
+    const M = d.meses;
+    const rowB = (lbl, key, opts) => { opts = opts || {}; const ind = opts.ind ? '&nbsp;&nbsp;' : ''; const st = opts.tot ? ' style="background:#dce6f2;font-weight:600"' : (opts.bold ? ' style="background:#f4f7fb;font-weight:600"' : ''); return `<tr${st}><td>${ind}${lbl}</td>${d.data.map(x => `<td class="num">${clp(x[key])}</td>`).join('')}</tr>`; };
+    const secc = (lbl) => `<tr style="background:#eaf0f6"><td colspan="${M.length + 1}" style="font-weight:600;color:var(--azul)">${lbl}</td></tr>`;
+    document.getElementById('esBody').innerHTML = `<div class="card"><h3>Balance General <span class="muted">(situacion financiera, a fin de cada mes)</span></h3>
+      <p class="muted" style="margin-bottom:8px">Saldos reconstruidos al cierre de cada mes (efectivo, CxC/CxP por fecha de pago, deuda de creditos, activos fijos). El inventario se muestra a valor actual (aproximado). Patrimonio = Activos - Pasivos.</p>
+      <div class="scroll"><table><tr><th>Concepto</th>${M.map(m => `<th class="num">${esMesCol(m)}</th>`).join('')}</tr>
+      ${secc('ACTIVOS')}
+      ${rowB('Efectivo y equivalentes', 'efectivo', { ind: 1 })}
+      ${rowB('Cuentas por cobrar', 'cxc', { ind: 1 })}
+      ${rowB('Inventario (aprox.)', 'inventario', { ind: 1 })}
+      ${rowB('Total activos corrientes', 'activosCorrientes', { bold: 1 })}
+      ${rowB('Activos fijos (valor compra)', 'activosFijos', { ind: 1 })}
+      ${rowB('TOTAL ACTIVOS', 'activosTotales', { tot: 1 })}
+      ${secc('PASIVOS')}
+      ${rowB('Cuentas por pagar', 'cxp', { ind: 1 })}
+      ${rowB('Cuotas de credito (hasta 12m)', 'cuotas12', { ind: 1 })}
+      ${rowB('Total pasivos corrientes', 'pasivosCorrientes', { bold: 1 })}
+      ${rowB('Deuda de creditos largo plazo', 'deudaLargoPlazo', { ind: 1 })}
+      ${rowB('TOTAL PASIVOS', 'pasivosTotales', { tot: 1 })}
+      ${secc('PATRIMONIO')}
+      ${rowB('Patrimonio neto', 'patrimonio', { tot: 1 })}
       </table></div></div>`;
   }
 }

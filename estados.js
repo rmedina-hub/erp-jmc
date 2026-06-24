@@ -67,4 +67,48 @@ router.get('/flujo-efectivo', (req, res) => {
   res.json({ meses, saldoInicialPeriodo: r2(saldoInicialPeriodo), data: rows });
 });
 
+// ---- Balance General (situacion financiera) a fin de cada mes ----
+router.get('/balance', (req, res) => {
+  const empresa = req.empresa;
+  const n = Math.min(Math.max(Number(req.query.meses) || 12, 1), 36);
+  const meses = rangoMeses(n);
+  const inventarioActual = db.prepare("SELECT COALESCE(SUM(stock*costo_promedio),0) s FROM productos WHERE empresa=? AND activo=1").get(empresa).s;
+  const cuentas = db.prepare('SELECT * FROM cuentas_bancarias WHERE empresa=?').all(empresa);
+  const cajas = db.prepare('SELECT * FROM caja_chica WHERE empresa=? AND IFNULL(activo,1)=1').all(empresa);
+  const finMes = (ym) => { const p = ym.split('-').map(Number); return new Date(p[0], p[1], 0).toISOString().slice(0, 10); };
+  const add12 = (ymd) => { const d = new Date(ymd + 'T00:00:00Z'); d.setUTCFullYear(d.getUTCFullYear() + 1); return d.toISOString().slice(0, 10); };
+  const data = meses.map(ym => {
+    const fin = finMes(ym);
+    let efBancos = 0;
+    cuentas.forEach(c => {
+      const ing = db.prepare("SELECT COALESCE(SUM(monto),0) s FROM tes_movimientos WHERE cuenta_id=? AND tipo='INGRESO' AND fecha<=?").get(c.id, fin).s;
+      const egr = db.prepare("SELECT COALESCE(SUM(monto),0) s FROM tes_movimientos WHERE cuenta_id=? AND tipo='EGRESO' AND fecha<=?").get(c.id, fin).s;
+      efBancos += (c.saldo_inicial || 0) + ing - egr;
+    });
+    let efCaja = 0;
+    cajas.forEach(c => {
+      const g = db.prepare("SELECT COALESCE(SUM(CASE WHEN tipo='GASTO' THEN monto ELSE 0 END),0) gastos, COALESCE(SUM(CASE WHEN tipo='REPOSICION' THEN monto ELSE 0 END),0) repos FROM caja_chica_mov WHERE caja_id=? AND fecha<=?").get(c.id, fin);
+      efCaja += (c.monto_asignado || 0) + g.repos - g.gastos;
+    });
+    const efectivo = efBancos + efCaja;
+    const cxc = db.prepare("SELECT COALESCE(SUM(monto),0) s FROM facturas WHERE empresa=? AND tipo='COBRAR' AND IFNULL(fecha_emision,fecha_vencimiento)<=? AND (fecha_pago IS NULL OR fecha_pago>?)").get(empresa, fin, fin).s;
+    const cxp = db.prepare("SELECT COALESCE(SUM(monto),0) s FROM facturas WHERE empresa=? AND tipo='PAGAR' AND IFNULL(fecha_emision,fecha_vencimiento)<=? AND (fecha_pago IS NULL OR fecha_pago>?)").get(empresa, fin, fin).s;
+    const activosFijos = db.prepare("SELECT COALESCE(SUM(valor_compra),0) s FROM activos WHERE empresa=? AND IFNULL(eliminado,0)=0 AND IFNULL(fecha_compra,'0000-01-01')<=?").get(empresa, fin).s;
+    const fin12 = add12(fin);
+    const deudaTotal = db.prepare("SELECT COALESCE(SUM(q.amortizacion),0) s FROM credito_cuotas q JOIN creditos c ON c.id=q.credito_id WHERE q.empresa=? AND c.fecha_inicio<=? AND (q.fecha_pago IS NULL OR q.fecha_pago>?)").get(empresa, fin, fin).s;
+    const cuotas12 = db.prepare("SELECT COALESCE(SUM(q.amortizacion),0) s FROM credito_cuotas q JOIN creditos c ON c.id=q.credito_id WHERE q.empresa=? AND c.fecha_inicio<=? AND (q.fecha_pago IS NULL OR q.fecha_pago>?) AND q.fecha_venc<=?").get(empresa, fin, fin, fin12).s;
+    const activosCorrientes = efectivo + cxc + inventarioActual;
+    const activosTotales = activosCorrientes + activosFijos;
+    const pasivosCorrientes = cxp + cuotas12;
+    const deudaLargoPlazo = deudaTotal - cuotas12;
+    const pasivosTotales = cxp + deudaTotal;
+    const patrimonio = activosTotales - pasivosTotales;
+    return { mes: ym, efectivo: r2(efectivo), cxc: r2(cxc), inventario: r2(inventarioActual), activosCorrientes: r2(activosCorrientes),
+      activosFijos: r2(activosFijos), activosTotales: r2(activosTotales),
+      cxp: r2(cxp), cuotas12: r2(cuotas12), pasivosCorrientes: r2(pasivosCorrientes),
+      deudaLargoPlazo: r2(deudaLargoPlazo), pasivosTotales: r2(pasivosTotales), patrimonio: r2(patrimonio) };
+  });
+  res.json({ meses, inventarioAprox: r2(inventarioActual), data });
+});
+
 module.exports = router;
