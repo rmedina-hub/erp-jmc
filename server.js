@@ -2,22 +2,32 @@ const express = require('express');
 const path = require('path');
 require('./db'); // inicializa esquema + admin
 
-// ---- Recuperacion de acceso de admin via variables de entorno (uso temporal) ----
-// En Render define ERP_RESET_EMAIL y ERP_RESET_PASSWORD; al reiniciar se restablece esa clave.
-// IMPORTANTE: quita esas variables despues de entrar (si no, se resetea en cada despliegue).
+// ---- Recuperacion de acceso de admin (uso temporal) ----
+// Opcion simple: en Render define la variable ERP_RESET = 1  (solo una bandera, sin contrasena).
+//   Al reiniciar, el admin queda con la clave generica 'Jmc2026.'  -> entra y cambiala enseguida.
+// Opcion con clave a medida: define ERP_RESET_EMAIL y ERP_RESET_PASSWORD.
+// IMPORTANTE: quita estas variables despues de entrar (si no, se resetea en cada despliegue).
 try {
+  const _bcrypt = require('bcryptjs');
+  const _db = require('./db');
+  const _flag = String(process.env.ERP_RESET || '').trim().toLowerCase();
   const _rEmail = (process.env.ERP_RESET_EMAIL || '').toLowerCase().trim();
   const _rPass = process.env.ERP_RESET_PASSWORD || '';
-  if (_rEmail && _rPass) {
-    const _bcrypt = require('bcryptjs');
-    const _db = require('./db');
-    const _u = _db.prepare('SELECT * FROM usuarios WHERE email=?').get(_rEmail);
+  let _target = null, _newPass = null;
+  if (_rEmail && _rPass) { _target = _rEmail; _newPass = _rPass; }
+  else if (['1', 'true', 'on', 'si', 'yes'].includes(_flag)) {
+    const _adm = _db.prepare("SELECT email FROM usuarios WHERE rol='admin' ORDER BY id LIMIT 1").get();
+    _target = _adm ? _adm.email : 'rmedina@jmcingenieria.cl';
+    _newPass = 'Jmc2026.';
+  }
+  if (_target && _newPass) {
+    const _u = _db.prepare('SELECT * FROM usuarios WHERE email=?').get(_target);
     if (_u) {
       _db.prepare('UPDATE usuarios SET password_hash=?, activo=1, token_version=COALESCE(token_version,0)+1 WHERE id=?')
-        .run(_bcrypt.hashSync(_rPass, 10), _u.id);
-      console.log('[RECUPERACION] Clave restablecida para ' + _rEmail + '. QUITA ERP_RESET_EMAIL y ERP_RESET_PASSWORD en Render despues de entrar.');
+        .run(_bcrypt.hashSync(_newPass, 10), _u.id);
+      console.log('[RECUPERACION] Clave restablecida para ' + _target + '. Entra y cambiala. QUITA las variables ERP_RESET* en Render despues.');
     } else {
-      console.log('[RECUPERACION] No existe usuario con email ' + _rEmail + ' (revisa que este bien escrito).');
+      console.log('[RECUPERACION] No existe usuario ' + _target);
     }
   }
 } catch (e) { console.log('[RECUPERACION] error:', e.message); }
