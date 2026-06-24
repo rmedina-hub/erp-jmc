@@ -960,9 +960,10 @@ async function actAlertas() {
 // ===================== USUARIOS =====================
 async function vUsuarios() {
   const us = await api('GET', '/usuarios');
+  window._usuarios = us;
   C().innerHTML = `<div class="card"><h3>Usuarios <button class="btn" onclick="formUsuario()">+ Nuevo usuario</button></h3>
-    <table><tr><th>Nombre</th><th>Email</th><th>Empresa</th><th>Rol</th><th>Activo</th><th></th></tr>
-    ${us.map(u => `<tr><td>${esc(u.nombre)}</td><td>${esc(u.email)}</td><td>${u.empresa && BRANDS[u.empresa] ? esc(BRANDS[u.empresa].nombre) : '<span class="muted">Todas</span>'}</td><td>${u.rol}</td><td>${u.activo ? '<span class="pill ok">SI</span>' : '<span class="pill no">NO</span>'}</td><td><button class="btn sm ghost" onclick="formResetPass(${u.id},'${esc(u.email)}')">Resetear clave</button></td></tr>`).join('')}</table></div>`;
+    <div class="scroll"><table><tr><th>Nombre</th><th>Email</th><th>Empresa</th><th>Rol</th><th>Activo</th><th></th></tr>
+    ${us.map(u => `<tr><td>${esc(u.nombre)}</td><td>${esc(u.email)}</td><td>${u.empresa && BRANDS[u.empresa] ? esc(BRANDS[u.empresa].nombre) : '<span class="muted">Todas</span>'}</td><td>${u.rol}</td><td>${u.activo ? '<span class="pill ok">SI</span>' : '<span class="pill no">NO</span>'}</td><td><button class="btn sm ghost" onclick="editarUsuario(${u.id})">Editar</button> <button class="btn sm ghost" onclick="formResetPass(${u.id},'${esc(u.email)}')">Resetear clave</button> <button class="btn sm red" onclick="cerrarSesionesUsuario(${u.id},'${esc(u.email)}')">Cerrar sesiones</button></td></tr>`).join('')}</table></div></div>`;
 }
 async function formUsuario() {
   let bods = [];
@@ -979,6 +980,34 @@ function uRolToggle() { const r = document.getElementById('uBodRow'); if (r) r.s
 async function guardarUsuario() {
   try { await api('POST', '/usuarios', { nombre: val('uNom'), email: val('uEmail'), password: val('uPass'), rol: val('uRol'), empresa: val('uEmp'), bodega_id: val('uRol') === 'bodeguero' ? (val('uBod') || null) : null }); closeModal(); vUsuarios(); }
   catch (e) { $('#uErr').textContent = e.message; }
+}
+function editarUsuario(id) { formEditUsuario((window._usuarios || []).find(x => x.id === id)); }
+async function formEditUsuario(u) {
+  if (!u) return;
+  let bods = [];
+  try { bods = await api('GET', '/inventario/bodegas'); } catch (e) {}
+  const eo = (v, t) => `<option value="${v}" ${u.rol === v ? 'selected' : ''}>${t}</option>`;
+  const emp = u.empresa || '';
+  modal(`<h3>Editar usuario <span class="muted">${esc(u.email)}</span></h3>
+    <div class="row"><div class="field"><label>Nombre</label><input id="euNom" value="${esc(u.nombre || '')}"></div>
+      <div class="field"><label>Rol</label><select id="euRol" onchange="euRolToggle()">${eo('usuario', 'usuario')}${eo('admin', 'admin')}${eo('bodeguero', 'bodeguero')}</select></div></div>
+    <div class="row"><div class="field"><label>Empresa (acceso)</label><select id="euEmp"><option value="" ${emp === '' ? 'selected' : ''}>Todas (puede cambiar)</option><option value="trabancura" ${emp === 'trabancura' ? 'selected' : ''}>Trabancura</option><option value="jmc" ${emp === 'jmc' ? 'selected' : ''}>JMC Ingenieria</option></select></div>
+      <div class="field"><label>Activo</label><label style="display:flex;align-items:center;gap:6px;height:38px"><input type="checkbox" id="euAct" style="width:auto" ${u.activo ? 'checked' : ''}> Cuenta activa</label></div></div>
+    <div class="row" id="euBodRow" style="display:${u.rol === 'bodeguero' ? '' : 'none'}"><div class="field"><label>Bodega asignada</label><select id="euBod"><option value="">-- elegir bodega --</option>${bods.map(b => `<option value="${b.id}" ${u.bodega_id == b.id ? 'selected' : ''}>${esc(b.nombre)} (${esc(b.tipo || '')})</option>`).join('')}</select></div></div>
+    <p class="muted" style="font-size:12px">Cambiar empresa, rol, estado o clave cierra automaticamente las sesiones abiertas de este usuario.</p>
+    <div class="err" id="euErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarEditUsuario(${u.id})">Guardar</button></div>`);
+}
+function euRolToggle() { const r = document.getElementById('euBodRow'); if (r) r.style.display = (val('euRol') === 'bodeguero') ? '' : 'none'; }
+async function guardarEditUsuario(id) {
+  try {
+    await api('PUT', '/usuarios/' + id, { nombre: val('euNom'), rol: val('euRol'), empresa: val('euEmp'), activo: document.getElementById('euAct').checked, bodega_id: val('euRol') === 'bodeguero' ? (val('euBod') || null) : null });
+    closeModal(); vUsuarios();
+  } catch (e) { if (!e._cancel) $('#euErr').textContent = e.message; }
+}
+async function cerrarSesionesUsuario(id, email) {
+  if (!confirm('Cerrar todas las sesiones abiertas de ' + email + '? Tendra que volver a iniciar sesion.')) return;
+  try { window._sinConfirmar = true; await api('POST', '/usuarios/' + id + '/cerrar-sesiones', {}); alert('Sesiones cerradas.'); } catch (e) { alert(e.message); } finally { window._sinConfirmar = false; }
 }
 
 // ===================== FLUJO DE CAJA =====================
@@ -1777,8 +1806,9 @@ async function guardarCambioPass() {
   if (nue !== rep) { $('#cpErr').textContent = 'Las contrasenas nuevas no coinciden'; return; }
   if (nue.length < 6) { $('#cpErr').textContent = 'La nueva contrasena debe tener al menos 6 caracteres'; return; }
   try {
-    await api('POST', '/usuarios/cambiar-password', { id: USER.id, actual: act, nueva: nue });
-    closeModal(); alert('Contrasena actualizada. Usala en tu proximo ingreso.');
+    const d = await api('POST', '/usuarios/cambiar-password', { id: USER.id, actual: act, nueva: nue });
+    if (d && d.token) TOKEN = d.token;
+    closeModal(); alert('Contrasena actualizada. Se cerraron las demas sesiones abiertas con tu clave anterior.');
   } catch (e) { $('#cpErr').textContent = e.message; }
 }
 function formResetPass(id, email) {

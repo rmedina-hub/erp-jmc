@@ -214,7 +214,8 @@ const ADD_COLS = [
   "ALTER TABLE activos ADD COLUMN eliminado_at TEXT",
   "ALTER TABLE activos ADD COLUMN eliminado_por TEXT",
   "ALTER TABLE activos ADD COLUMN mantencion_intervalo_km REAL DEFAULT 0",
-  "ALTER TABLE activo_mantenciones ADD COLUMN empresa TEXT"
+  "ALTER TABLE activo_mantenciones ADD COLUMN empresa TEXT",
+  "ALTER TABLE usuarios ADD COLUMN token_version INTEGER DEFAULT 0"
 ];
 for (const sql of ADD_COLS) { try { db.exec(sql); } catch (e) {} }
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_auditoria_emp_ts ON auditoria(empresa, ts)'); } catch (e) {}

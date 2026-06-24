@@ -37,13 +37,32 @@ router.post('/', auth, admin, (req, res) => {
   } catch (e) { res.status(400).json({ error: 'email ya registrado' }); }
 });
 router.put('/:id', auth, admin, (req, res) => {
-  const { nombre, rol, activo, password } = req.body;
+  const { nombre, rol, activo, password, empresa, bodega_id } = req.body;
   const u = db.prepare('SELECT * FROM usuarios WHERE id=?').get(req.params.id);
   if (!u) return res.status(404).json({ error: 'No existe' });
+  const rolN = rol != null ? (['admin', 'bodeguero'].includes(rol) ? rol : 'usuario') : u.rol;
+  let empN = u.empresa;
+  if (empresa !== undefined) { const e = (empresa === '' || empresa == null) ? null : String(empresa).toLowerCase().trim(); empN = ['jmc', 'trabancura'].includes(e) ? e : null; }
+  let bodN = u.bodega_id;
+  if (bodega_id !== undefined) bodN = bodega_id || null;
+  if (rolN !== 'bodeguero') bodN = null;
   const hash = password ? bcrypt.hashSync(password, 10) : u.password_hash;
-  db.prepare('UPDATE usuarios SET nombre=?, rol=?, activo=?, password_hash=? WHERE id=?')
-    .run(nombre ?? u.nombre, rol ?? u.rol, activo == null ? u.activo : (activo ? 1 : 0), hash, req.params.id);
-  audit(req, 'Usuarios', password ? 'Resetear clave / editar usuario' : 'Editar usuario', u.email);
+  const actN = activo == null ? u.activo : (activo ? 1 : 0);
+  // Cambios sensibles -> invalidar sesiones abiertas (token_version++)
+  const sensible = !!password || empN !== u.empresa || rolN !== u.rol || actN !== u.activo;
+  const tv = (u.token_version || 0) + (sensible ? 1 : 0);
+  db.prepare('UPDATE usuarios SET nombre=?, rol=?, activo=?, password_hash=?, empresa=?, bodega_id=?, token_version=? WHERE id=?')
+    .run(nombre ?? u.nombre, rolN, actN, hash, empN, bodN, tv, req.params.id);
+  audit(req, 'Usuarios', password ? 'Resetear clave / editar usuario' : 'Editar usuario', u.email + (empN !== u.empresa ? ' empresa=' + (empN || 'todas') : '') + (sensible ? ' (sesiones cerradas)' : ''));
+  res.json({ ok: true });
+});
+
+// Cerrar todas las sesiones abiertas de un usuario (solo admin)
+router.post('/:id/cerrar-sesiones', auth, admin, (req, res) => {
+  const u = db.prepare('SELECT * FROM usuarios WHERE id=?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'No existe' });
+  db.prepare('UPDATE usuarios SET token_version=? WHERE id=?').run((u.token_version || 0) + 1, req.params.id);
+  audit(req, 'Usuarios', 'Cerrar sesiones', u.email);
   res.json({ ok: true });
 });
 
@@ -53,9 +72,11 @@ router.post('/cambiar-password', auth, (req, res) => {
   const u = db.prepare('SELECT * FROM usuarios WHERE id=?').get(req.user.id);
   if (!u || !bcrypt.compareSync(actual || '', u.password_hash)) return res.status(400).json({ error: 'La contrasena actual no es correcta' });
   if (!nueva || nueva.length < 6) return res.status(400).json({ error: 'La nueva contrasena debe tener al menos 6 caracteres' });
-  db.prepare('UPDATE usuarios SET password_hash=? WHERE id=?').run(bcrypt.hashSync(nueva, 10), u.id);
-  audit(req, 'Usuarios', 'Cambio de contrasena propia', u.email);
-  res.json({ ok: true });
+  const tv = (u.token_version || 0) + 1;
+  db.prepare('UPDATE usuarios SET password_hash=?, token_version=? WHERE id=?').run(bcrypt.hashSync(nueva, 10), tv, u.id);
+  audit(req, 'Usuarios', 'Cambio de contrasena propia (sesiones cerradas)', u.email);
+  const fresh = db.prepare('SELECT * FROM usuarios WHERE id=?').get(u.id);
+  res.json({ ok: true, token: sign(fresh) });
 });
 
 module.exports = router;

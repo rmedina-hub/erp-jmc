@@ -1,9 +1,10 @@
 const jwt = require('jsonwebtoken');
+const db = require('./db');
 const SECRET = process.env.ERP_SECRET || 'cambia-esta-clave-secreta-en-produccion';
 const EMPRESAS = ['jmc', 'trabancura'];
 
 function sign(user) {
-  return jwt.sign({ id: user.id, nombre: user.nombre, email: user.email, rol: user.rol, empresa: user.empresa || null, bodega_id: user.bodega_id || null },
+  return jwt.sign({ id: user.id, nombre: user.nombre, email: user.email, rol: user.rol, empresa: user.empresa || null, bodega_id: user.bodega_id || null, tv: user.token_version || 0 },
     SECRET, { expiresIn: '12h' });
 }
 
@@ -22,7 +23,11 @@ function auth(req, res, next) {
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'No autenticado' });
   try {
-    req.user = jwt.verify(token, SECRET);
+    const payload = jwt.verify(token, SECRET);
+    const row = db.prepare('SELECT token_version, activo FROM usuarios WHERE id=?').get(payload.id);
+    if (!row || !row.activo) return res.status(401).json({ error: 'Cuenta inactiva o inexistente' });
+    if ((row.token_version || 0) !== (payload.tv || 0)) return res.status(401).json({ error: 'Sesion cerrada, vuelve a iniciar sesion' });
+    req.user = payload;
     req.empresa = resolverEmpresa(req);   // empresa efectiva para aislar datos
     next();
   } catch {
