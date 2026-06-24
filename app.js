@@ -94,14 +94,75 @@ function activarOcultarBorrar() {
 async function logout() { try { await api('POST', '/usuarios/logout', {}); } catch (e) {} TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
 function go(v) {
   stopFlujoAuto();
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, indicadores: vIndicadores, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
+
+
+async function vIndicadores() {
+  const d = await api('GET', '/indicadores');
+  const c = d.componentes, r = d.ratios;
+  const f = (v) => clp(v);
+  const num2 = (v) => v == null ? '—' : Number(v).toFixed(2);
+  const pct = (v) => v == null ? '—' : (Number(v) * 100).toFixed(1) + '%';
+  const dias = (v) => v == null ? '—' : Math.round(Number(v)) + ' dias';
+  const row = (lbl, val, src, bold) => `<tr${bold ? ' style="background:#f4f7fb;font-weight:600"' : ''}><td>${lbl}</td><td class="num">${val}</td><td class="muted" style="font-size:12px">${src || ''}</td></tr>`;
+  const ratio = (nombre, formula, valor, interp) => `<tr><td><b>${nombre}</b><div class="muted" style="font-size:12px">${formula}</div></td><td class="num" style="font-size:16px"><b>${valor}</b></td><td class="muted" style="font-size:12px">${interp}</td></tr>`;
+  C().innerHTML = `
+  <div class="card"><h3>Componentes <span class="muted">(de donde salen los datos)</span></h3>
+    <p class="muted" style="margin-bottom:8px">Saldos a la fecha. El flujo (ingresos, egresos, ventas, compras) se calcula sobre los ultimos 12 meses (${fdate(d.periodo.desde)} a ${fdate(d.periodo.hasta)}).</p>
+    <div class="scroll"><table><tr><th>Concepto</th><th class="num">Monto</th><th>Fuente</th></tr>
+      ${row('Efectivo en bancos', f(c.efectivoBancos), 'Tesoreria &middot; saldo de cuentas')}
+      ${row('Caja chica', f(c.cajaChica), 'Caja chica &middot; saldo')}
+      ${row('= Efectivo y equivalentes', f(c.efectivo), 'Bancos + caja chica', true)}
+      ${row('Cuentas por cobrar (pendientes)', f(c.cxc), 'Cuentas por cobrar')}
+      ${row('Inventario valorizado', f(c.inventario), 'Inventario PMP (stock x costo)')}
+      ${row('= Activos corrientes', f(c.activosCorrientes), 'Efectivo + CxC + Inventario', true)}
+      ${row('Activos fijos', f(c.activosFijos), 'Activos fijos &middot; valor de compra')}
+      ${row('= Activos totales', f(c.activosTotales), 'Corrientes + Activos fijos', true)}
+      ${row('Cuentas por pagar (pendientes)', f(c.cxp), 'Cuentas por pagar')}
+      ${row('Cuotas de credito (prox. 12 meses)', f(c.cuotasCredito12m), 'Creditos bancarios')}
+      ${row('= Pasivos corrientes', f(c.pasivosCorrientes), 'CxP + cuotas a 12 meses', true)}
+      ${row('Deuda total de creditos', f(c.deudaCreditos), 'Creditos bancarios &middot; saldo')}
+      ${row('= Pasivos totales', f(c.pasivosTotales), 'CxP + deuda creditos', true)}
+      ${row('Patrimonio neto', f(c.patrimonio), 'Activos totales - Pasivos totales', true)}
+      ${row('Ingresos (12 meses)', f(c.ingresos12), 'Tesoreria &middot; ingresos')}
+      ${row('Egresos (12 meses)', f(c.egresos12), 'Tesoreria &middot; egresos')}
+      ${row('= Beneficio neto (12 meses)', f(c.beneficioNeto), 'Ingresos - Egresos', true)}
+      ${row('Ventas a credito (12 meses)', f(c.ventasCredito12), 'Cuentas por cobrar emitidas')}
+      ${row('Compras (12 meses)', f(c.compras12), 'Cuentas por pagar emitidas')}
+    </table></div></div>
+
+  <div class="card"><h3>Liquidez</h3>
+    <div class="scroll"><table><tr><th>Indicador</th><th class="num">Valor</th><th>Interpretacion</th></tr>
+      ${ratio('Razon corriente', 'Activos corrientes / Pasivos corrientes', num2(r.razonCorriente), '&gt; 1 indica capacidad de cubrir deudas a corto plazo.')}
+      ${ratio('Ratio de efectivo (Cash Ratio)', 'Efectivo / Pasivos corrientes', num2(r.cashRatio), 'Liquidez mas estricta: solo dinero disponible.')}
+      ${ratio('Capital de trabajo neto', 'Activos corrientes - Pasivos corrientes', f(r.capitalTrabajo), 'Dinero para operar tras pagar deudas inmediatas.')}
+    </table></div></div>
+
+  <div class="card"><h3>Solvencia y endeudamiento</h3>
+    <div class="scroll"><table><tr><th>Indicador</th><th class="num">Valor</th><th>Interpretacion</th></tr>
+      ${ratio('Ratio de solvencia', 'Activos totales / Pasivos totales', num2(r.solvencia), '&gt; 1: los activos superan a las deudas.')}
+      ${ratio('Apalancamiento financiero', 'Activos totales / Patrimonio neto', num2(r.apalancamiento), 'Mayor numero = mas deuda financiando los activos (mas riesgo).')}
+    </table></div></div>
+
+  <div class="card"><h3>Rentabilidad</h3>
+    <div class="scroll"><table><tr><th>Indicador</th><th class="num">Valor</th><th>Interpretacion</th></tr>
+      ${ratio('Margen de utilidad neta', 'Beneficio neto / Ventas totales', pct(r.margenNeto), 'Porcentaje de cada peso vendido que queda como ganancia.')}
+      ${ratio('ROI (sobre activos totales)', 'Beneficio neto / Inversion total', pct(r.roi), 'Rentabilidad sobre el total invertido (activos totales).')}
+    </table></div></div>
+
+  <div class="card"><h3>Eficiencia / gestion</h3>
+    <div class="scroll"><table><tr><th>Indicador</th><th class="num">Valor</th><th>Interpretacion</th></tr>
+      ${ratio('Rotacion de cuentas por cobrar', 'Ventas a credito / CxC (saldo actual)', num2(r.rotacionCxC) + (r.rotacionCxC != null ? ' veces' : ''), 'Cuantas veces al ano se cobra a los clientes. Mas alto = mejor cobro.')}
+      ${ratio('Periodo medio de pago', 'CxP x 365 / Compras', dias(r.periodoPago), 'Dias que tarda la empresa en pagar a sus proveedores.')}
+    </table></div></div>`;
+}
 
 // ===================== DASHBOARD =====================
 async function vDashboard() {
