@@ -2,6 +2,26 @@ const express = require('express');
 const path = require('path');
 require('./db'); // inicializa esquema + admin
 
+// ---- Recuperacion de acceso de admin via variables de entorno (uso temporal) ----
+// En Render define ERP_RESET_EMAIL y ERP_RESET_PASSWORD; al reiniciar se restablece esa clave.
+// IMPORTANTE: quita esas variables despues de entrar (si no, se resetea en cada despliegue).
+try {
+  const _rEmail = (process.env.ERP_RESET_EMAIL || '').toLowerCase().trim();
+  const _rPass = process.env.ERP_RESET_PASSWORD || '';
+  if (_rEmail && _rPass) {
+    const _bcrypt = require('bcryptjs');
+    const _db = require('./db');
+    const _u = _db.prepare('SELECT * FROM usuarios WHERE email=?').get(_rEmail);
+    if (_u) {
+      _db.prepare('UPDATE usuarios SET password_hash=?, activo=1, token_version=COALESCE(token_version,0)+1 WHERE id=?')
+        .run(_bcrypt.hashSync(_rPass, 10), _u.id);
+      console.log('[RECUPERACION] Clave restablecida para ' + _rEmail + '. QUITA ERP_RESET_EMAIL y ERP_RESET_PASSWORD en Render despues de entrar.');
+    } else {
+      console.log('[RECUPERACION] No existe usuario con email ' + _rEmail + ' (revisa que este bien escrito).');
+    }
+  }
+} catch (e) { console.log('[RECUPERACION] error:', e.message); }
+
 const app = express();
 app.use(express.json({ limit: '15mb' }));
 
