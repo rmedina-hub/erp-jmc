@@ -348,7 +348,7 @@ async function tesCuentas() {
   window._cuentas = cu;
   $('#tesBody').innerHTML = `<div class="card"><h3>Cuentas bancarias <button class="btn" onclick="formCuenta()">+ Nueva cuenta</button></h3>
     <div class="scroll"><table><tr><th>Banco</th><th>Cuenta</th><th>N°</th><th>Moneda</th><th class="num">Saldo inicial</th><th class="num">Ingresos</th><th class="num">Egresos</th><th class="num">Saldo actual</th><th></th></tr>
-    ${cu.length ? cu.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}</td><td>${esc(c.numero||'')}</td><td>${c.moneda}</td><td class="num">${clp(c.saldo_inicial)}</td><td class="num">${clp(c.total_ingresos)}</td><td class="num">${clp(c.total_egresos)}</td><td class="num"><b>${clp(c.saldo_actual)}</b></td><td><button class="btn sm ghost" onclick="editarCuenta(${c.id})">Editar</button></td></tr>`).join('') : '<tr><td colspan="9" class="empty">Sin cuentas</td></tr>'}</table></div></div>`;
+    ${cu.length ? cu.map(c => `<tr><td>${esc(c.banco)}</td><td>${esc(c.nombre)}</td><td>${esc(c.numero||'')}</td><td>${c.moneda}</td><td class="num">${clp(c.saldo_inicial)}</td><td class="num">${clp(c.total_ingresos)}</td><td class="num">${clp(c.total_egresos)}</td><td class="num"><b>${clp(c.saldo_actual)}</b></td><td><button class="btn sm ghost" onclick="editarCuenta(${c.id})">Editar</button></td></tr>`).join('') + `<tr style="background:#dce6f2"><td colspan="4"><b>TOTAL</b></td><td class="num"><b>${clp(cu.reduce((a,c)=>a+(c.saldo_inicial||0),0))}</b></td><td class="num"><b>${clp(cu.reduce((a,c)=>a+(c.total_ingresos||0),0))}</b></td><td class="num"><b>${clp(cu.reduce((a,c)=>a+(c.total_egresos||0),0))}</b></td><td class="num"><b>${clp(cu.reduce((a,c)=>a+(c.saldo_actual||0),0))}</b></td><td></td></tr>` : '<tr><td colspan="9" class="empty">Sin cuentas</td></tr>'}</table></div></div>`;
 }
 function editarCuenta(id) { formCuenta((window._cuentas || []).find(x => x.id === id)); }
 function formCuenta(c) {
@@ -380,12 +380,55 @@ async function tesMovs() {
   document.getElementById('tmCuenta').value = tesCuenta;
   tesMovsLoad();
 }
+const MESES_NOM = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+function mesLabel(ym) { if (!ym || ym === '-') return 'Sin fecha'; const [y, mm] = ym.split('-'); return MESES_NOM[Number(mm)] + ' ' + y; }
 async function tesMovsLoad() {
   tesCuenta = document.getElementById('tmCuenta').value;
   const m = await api('GET', '/tesoreria/movimientos?cuenta_id=' + tesCuenta);
   window._tesMovs = m;
-  $('#tmList').innerHTML = `<div class="scroll"><table><tr><th>Fecha</th><th>Tipo</th><th>Categoria</th><th>Glosa</th><th class="num">Monto</th><th>Concil.</th><th></th></tr>
-    ${m.length ? m.map(x => `<tr><td>${fdate(x.fecha)}</td><td><span class="pill ${x.tipo==='INGRESO'?'ok':'no'}">${x.tipo}</span></td><td>${esc(x.categoria||'')}</td><td>${esc(x.glosa||'')}</td><td class="num">${clp(x.monto)}</td><td>${x.conciliado?'<span class="pill ok">SI</span>':'<span class="pill warn">NO</span>'}</td><td><button class="btn sm ghost" onclick="editarTesMov(${x.id})">Editar</button> <button class="btn sm red" onclick="delTesMov(${x.id})">x</button></td></tr>`).join('') : '<tr><td colspan="7" class="empty">Sin movimientos</td></tr>'}</table></div>`;
+  const meses = [...new Set(m.map(x => (x.fecha || '').slice(0, 7)).filter(Boolean))].sort().reverse();
+  const cats = [...new Set(m.map(x => x.categoria).filter(Boolean))].sort();
+  $('#tmList').innerHTML = `
+    <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="max-width:160px"><label>Mes</label><select id="fMes" onchange="renderTesMovs()"><option value="">Todos</option>${meses.map(ym => `<option value="${ym}">${mesLabel(ym)}</option>`).join('')}</select></div>
+      <div class="field" style="max-width:130px"><label>Tipo</label><select id="fTipo" onchange="renderTesMovs()"><option value="">Todos</option><option>INGRESO</option><option>EGRESO</option></select></div>
+      <div class="field" style="max-width:210px"><label>Categoria</label><select id="fCat" onchange="renderTesMovs()"><option value="">Todas</option>${cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></div>
+      <div class="field" style="max-width:180px"><label>Glosa</label><input id="fGlosa" oninput="renderTesMovs()" placeholder="contiene..."></div>
+      <div class="field" style="max-width:150px"><label>Monto</label><input id="fMonto" oninput="renderTesMovs()" placeholder="contiene..."></div>
+      <button class="btn ghost" onclick="limpiarFiltrosTes()">Limpiar</button></div>
+    <div id="tmKpis" style="margin-top:10px"></div>
+    <div id="tmTable" style="margin-top:10px"></div>`;
+  renderTesMovs();
+}
+function limpiarFiltrosTes() { ['fMes', 'fTipo', 'fCat', 'fGlosa', 'fMonto'].forEach(i => { const e = document.getElementById(i); if (e) e.value = ''; }); renderTesMovs(); }
+function renderTesMovs() {
+  const all = window._tesMovs || [];
+  const fMes = val('fMes'), fTipo = val('fTipo'), fCat = val('fCat'), fGlosa = (val('fGlosa') || '').toLowerCase(), fMonto = (val('fMonto') || '').replace(/[^0-9]/g, '');
+  const list = all.filter(x => {
+    if (fMes && (x.fecha || '').slice(0, 7) !== fMes) return false;
+    if (fTipo && x.tipo !== fTipo) return false;
+    if (fCat && (x.categoria || '') !== fCat) return false;
+    if (fGlosa && !((x.glosa || '').toLowerCase().includes(fGlosa))) return false;
+    if (fMonto && !String(Math.round(Math.abs(x.monto))).includes(fMonto)) return false;
+    return true;
+  });
+  let tIng = 0, tEg = 0;
+  list.forEach(x => { if (x.tipo === 'INGRESO') tIng += x.monto; else tEg += x.monto; });
+  document.getElementById('tmKpis').innerHTML = `<div class="grid g3">
+    <div class="kpi"><div class="lbl">Total ingresos (filtrado)</div><div class="val" style="color:var(--verde)">${clp(tIng)}</div></div>
+    <div class="kpi"><div class="lbl">Total egresos (filtrado)</div><div class="val" style="color:var(--rojo)">${clp(tEg)}</div></div>
+    <div class="kpi"><div class="lbl">Neto (filtrado)</div><div class="val">${clp(tIng - tEg)}</div></div></div>`;
+  const byMonth = {};
+  list.forEach(x => { const k = (x.fecha || '').slice(0, 7) || '-'; (byMonth[k] = byMonth[k] || []).push(x); });
+  const months = Object.keys(byMonth).sort().reverse();
+  let rows = '';
+  if (!list.length) rows = '<tr><td colspan="7" class="empty">Sin movimientos con esos filtros</td></tr>';
+  else months.forEach(ym => {
+    let mi = 0, me = 0;
+    const body = byMonth[ym].map(x => { if (x.tipo === 'INGRESO') mi += x.monto; else me += x.monto; return `<tr><td>${fdate(x.fecha)}</td><td><span class="pill ${x.tipo==='INGRESO'?'ok':'no'}">${x.tipo}</span></td><td>${esc(x.categoria||'')}</td><td>${esc(x.glosa||'')}</td><td class="num">${clp(x.monto)}</td><td>${x.conciliado?'<span class="pill ok">SI</span>':'<span class="pill warn">NO</span>'}</td><td><button class="btn sm ghost" onclick="editarTesMov(${x.id})">Editar</button> <button class="btn sm red" onclick="delTesMov(${x.id})">x</button></td></tr>`; }).join('');
+    rows += `<tr style="background:#eaf0f6"><td colspan="7" style="font-weight:600;color:var(--azul)">${mesLabel(ym)}</td></tr>` + body + `<tr style="background:#f4f7fb"><td colspan="4" style="text-align:right"><b>Total ${mesLabel(ym)}:</b></td><td colspan="3">Ingresos <b style="color:var(--verde)">${clp(mi)}</b> &middot; Egresos <b style="color:var(--rojo)">${clp(me)}</b> &middot; Neto <b>${clp(mi - me)}</b></td></tr>`;
+  });
+  document.getElementById('tmTable').innerHTML = `<div class="scroll"><table><tr><th>Fecha</th><th>Tipo</th><th>Categoria</th><th>Glosa</th><th class="num">Monto</th><th>Concil.</th><th></th></tr>${rows}</table></div>`;
 }
 async function delTesMov(id) { if (confirm('Eliminar movimiento?')) { await api('DELETE', '/tesoreria/movimientos/' + id); tesMovsLoad(); } }
 // Conceptos de flujo de caja (coinciden con las lineas de la planilla; se reflejan de inmediato en el informe)
