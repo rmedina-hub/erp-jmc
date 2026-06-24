@@ -105,13 +105,13 @@ tr:hover td{background:#f9fbfe}
       <div class="empresa-pick" id="empresaPick"></div>
       <form onsubmit="doLogin(event)">
         <label>Email</label>
-        <input id="liEmail" type="email" value="rmedina@jmcingenieria.cl" required>
+        <input id="liEmail" type="email" autocomplete="off" placeholder="tu correo" required>
         <label>Contrasena</label>
-        <input id="liPass" type="password" value="Jmc2026." required>
+        <input id="liPass" type="password" autocomplete="off" placeholder="tu contrasena" required>
         <button type="submit" class="btn-main">Ingresar</button>
         <div class="err" id="liErr"></div>
       </form>
-      <div class="login-help">Clave temporal inicial: <b>Jmc2026.</b> &mdash; cambiela al ingresar</div>
+      <div class="login-help">Ingresa con tu usuario y contrasena. Si es tu primer ingreso, solicita tu clave al administrador.</div>
     </div>
   </div>
 
