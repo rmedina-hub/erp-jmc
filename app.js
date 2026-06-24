@@ -94,12 +94,12 @@ function activarOcultarBorrar() {
 async function logout() { try { await api('POST', '/usuarios/logout', {}); } catch (e) {} TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', estados: 'Estados financieros', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
 function go(v) {
   stopFlujoAuto();
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, indicadores: vIndicadores, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, indicadores: vIndicadores, estados: vEstados, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
 
@@ -162,6 +162,57 @@ async function vIndicadores() {
       ${ratio('Rotacion de cuentas por cobrar', 'Ventas a credito / CxC (saldo actual)', num2(r.rotacionCxC) + (r.rotacionCxC != null ? ' veces' : ''), 'Cuantas veces al ano se cobra a los clientes. Mas alto = mejor cobro.')}
       ${ratio('Periodo medio de pago', 'CxP x 365 / Compras', dias(r.periodoPago), 'Dias que tarda la empresa en pagar a sus proveedores.')}
     </table></div></div>`;
+}
+
+
+let estadosTab = 'resultados', estadosMeses = 12;
+function vEstados() {
+  C().innerHTML = `<div class="tabs">
+    <button data-t="resultados">Estado de Resultados</button>
+    <button data-t="flujo">Flujo de Efectivo</button></div>
+    <div class="row" style="margin:10px 0"><div class="field" style="max-width:170px"><label>Periodo</label><select id="esMeses" onchange="estadosMeses=Number(this.value);renderEstados()"><option value="6">6 meses</option><option value="12">12 meses</option><option value="24">24 meses</option></select></div></div>
+    <div id="esBody"></div>`;
+  C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { estadosTab = b.dataset.t; renderEstadosTabs(); }));
+  renderEstadosTabs();
+}
+function renderEstadosTabs() {
+  C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === estadosTab));
+  const sel = document.getElementById('esMeses'); if (sel) sel.value = estadosMeses;
+  renderEstados();
+}
+function esMesCol(ym) { const p = ym.split('-'); return ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'][Number(p[1])] + " '" + p[0].slice(2); }
+async function renderEstados() {
+  if (estadosTab === 'resultados') {
+    const d = await api('GET', '/estados/resultados?meses=' + estadosMeses);
+    const M = d.meses;
+    const sumRow = (lbl, fn, bold) => `<tr${bold ? ' style="background:#f4f7fb;font-weight:600"' : ''}><td>${lbl}</td>${d.data.map(x => `<td class="num">${clp(fn(x))}</td>`).join('')}<td class="num">${clp(d.data.reduce((a, x) => a + fn(x), 0))}</td></tr>`;
+    const catRow = (cat, key) => `<tr><td>&nbsp;&nbsp;${esc(cat)}</td>${d.data.map(x => `<td class="num">${x[key][cat] ? clp(x[key][cat]) : '-'}</td>`).join('')}<td class="num">${clp(d.data.reduce((a, x) => a + (x[key][cat] || 0), 0))}</td></tr>`;
+    document.getElementById('esBody').innerHTML = `<div class="card"><h3>Estado de Resultados <span class="muted">(base caja, mensual)</span></h3>
+      <p class="muted" style="margin-bottom:8px">Ingresos y egresos efectivos por categoria de Tesoreria. No es contabilidad devengada.</p>
+      <div class="scroll"><table><tr><th>Concepto</th>${M.map(m => `<th class="num">${esMesCol(m)}</th>`).join('')}<th class="num">Total</th></tr>
+      <tr style="background:#eaf0f6"><td colspan="${M.length + 2}" style="font-weight:600;color:var(--azul)">INGRESOS</td></tr>
+      ${d.categoriasIngreso.map(c => catRow(c, 'ingresos')).join('') || `<tr><td colspan="${M.length + 2}" class="empty">Sin ingresos</td></tr>`}
+      ${sumRow('Total ingresos', x => x.totalIngresos, true)}
+      <tr style="background:#eaf0f6"><td colspan="${M.length + 2}" style="font-weight:600;color:var(--azul)">EGRESOS</td></tr>
+      ${d.categoriasEgreso.map(c => catRow(c, 'egresos')).join('') || `<tr><td colspan="${M.length + 2}" class="empty">Sin egresos</td></tr>`}
+      ${sumRow('Total egresos', x => x.totalEgresos, true)}
+      <tr style="background:#dce6f2"><td><b>RESULTADO (utilidad/perdida)</b></td>${d.data.map(x => `<td class="num" style="color:${x.resultado < 0 ? 'var(--rojo)' : 'inherit'}"><b>${clp(x.resultado)}</b></td>`).join('')}<td class="num"><b>${clp(d.data.reduce((a, x) => a + x.resultado, 0))}</b></td></tr>
+      </table></div></div>`;
+  } else {
+    const d = await api('GET', '/estados/flujo-efectivo?meses=' + estadosMeses);
+    const M = d.meses;
+    const r = (lbl, key, bold, color) => `<tr${bold ? ' style="background:#f4f7fb;font-weight:600"' : ''}><td>${lbl}</td>${d.data.map(x => `<td class="num"${color && x[key] < 0 ? ' style="color:var(--rojo)"' : ''}>${clp(x[key])}</td>`).join('')}</tr>`;
+    document.getElementById('esBody').innerHTML = `<div class="card"><h3>Estado de Flujos de Efectivo <span class="muted">(mensual)</span></h3>
+      <p class="muted" style="margin-bottom:8px">Entradas y salidas reales clasificadas en operacion, inversion y financiacion (efectivo de bancos).</p>
+      <div class="scroll"><table><tr><th>Concepto</th>${M.map(m => `<th class="num">${esMesCol(m)}</th>`).join('')}</tr>
+      ${r('Saldo inicial', 'saldoInicial', true)}
+      ${r('Flujo de operacion', 'operacion', false, true)}
+      ${r('Flujo de inversion', 'inversion', false, true)}
+      ${r('Flujo de financiacion', 'financiacion', false, true)}
+      ${r('= Flujo neto del mes', 'flujoNeto', true, true)}
+      <tr style="background:#dce6f2"><td><b>Saldo final</b></td>${d.data.map(x => `<td class="num"><b>${clp(x.saldoFinal)}</b></td>`).join('')}</tr>
+      </table></div></div>`;
+  }
 }
 
 // ===================== DASHBOARD =====================
