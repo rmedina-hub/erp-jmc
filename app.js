@@ -96,6 +96,7 @@ async function logout() { try { await api('POST', '/usuarios/logout', {}); } cat
 // ===== Router =====
 const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
 function go(v) {
+  stopFlujoAuto();
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
   ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
@@ -846,6 +847,9 @@ async function guardarUsuario() {
 // ===================== FLUJO DE CAJA =====================
 let flujoTab = 'reporte';
 let flujoParams = { granularidad: 'mensual', desde: inicioAno(), hasta: null, saldo_minimo: 0 };
+let flujoAuto = true, _flujoTimer = null;
+function stopFlujoAuto() { if (_flujoTimer) { clearTimeout(_flujoTimer); _flujoTimer = null; } }
+function toggleFlujoAuto() { const c = document.getElementById('fAuto'); flujoAuto = c ? c.checked : false; if (flujoAuto) fjCalcular(); else stopFlujoAuto(); }
 function vFlujo() {
   if (!flujoParams.hasta) flujoParams.hasta = new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10);
   C().innerHTML = `<div class="tabs">
@@ -857,6 +861,7 @@ function vFlujo() {
   renderFlujoTabs();
 }
 function renderFlujoTabs() {
+  stopFlujoAuto();
   C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === flujoTab));
   ({ reporte: fjReporte, planilla: fjPlanilla, proyecciones: fjProy, escenarios: fjEsc }[flujoTab])();
 }
@@ -869,6 +874,8 @@ async function fjReporte() {
       <div class="field"><label>Hasta</label><input id="fHasta" type="date" value="${flujoParams.hasta}"></div>
       <div class="field"><label>Saldo minimo deseado</label><input id="fMin" type="number" value="${flujoParams.saldo_minimo}"></div>
       <button class="btn" onclick="fjCalcular()">Calcular</button>
+      <label style="font-weight:400;align-self:center;margin-left:6px;white-space:nowrap"><input type="checkbox" id="fAuto" style="width:auto" ${flujoAuto?'checked':''} onchange="toggleFlujoAuto()"> Auto-actualizar (20s)</label>
+      <span id="fAutoTs" class="muted" style="align-self:center;font-size:12px;margin-left:6px"></span>
     </div></div><div id="fjRes"></div>`;
   document.getElementById('fGran').value = flujoParams.granularidad;
   fjCalcular();
@@ -878,6 +885,9 @@ async function fjCalcular() {
   const r = await api('POST', '/flujo/reporte', flujoParams);
   let ev = null; try { ev = await api('POST', '/flujo/eventos', flujoParams); } catch (e) {}
   $('#fjRes').innerHTML = renderReporte(r, ev);
+  const _ts = document.getElementById('fAutoTs'); if (_ts) _ts.textContent = 'Actualizado ' + new Date().toLocaleTimeString('es-CL');
+  stopFlujoAuto();
+  if (flujoAuto) _flujoTimer = setTimeout(() => { if (document.getElementById('fGran')) fjCalcular(); }, 20000);
 }
 function renderReporte(r, ev) {
   const al = r.alertas.length
