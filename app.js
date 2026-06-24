@@ -8,6 +8,7 @@ const num = (n, d = 2) => new Intl.NumberFormat('es-CL', { minimumFractionDigits
 const fdate = (s) => s ? s.slice(0, 10) : '';
 const hoy = () => new Date().toISOString().slice(0, 10);
 const inicioMes = () => hoy().slice(0, 8) + '01';
+const inicioAno = () => hoy().slice(0, 4) + '-01-01';
 const esc = (s) => (s == null ? '' : String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
 
 function exportarVista() {
@@ -844,7 +845,7 @@ async function guardarUsuario() {
 
 // ===================== FLUJO DE CAJA =====================
 let flujoTab = 'reporte';
-let flujoParams = { granularidad: 'mensual', desde: inicioMes(), hasta: null, saldo_minimo: 0 };
+let flujoParams = { granularidad: 'mensual', desde: inicioAno(), hasta: null, saldo_minimo: 0 };
 function vFlujo() {
   if (!flujoParams.hasta) flujoParams.hasta = new Date(Date.now() + 120 * 86400000).toISOString().slice(0, 10);
   C().innerHTML = `<div class="tabs">
