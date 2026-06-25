@@ -94,12 +94,12 @@ function activarOcultarBorrar() {
 async function logout() { try { await api('POST', '/usuarios/logout', {}); } catch (e) {} TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', estados: 'Estados financieros', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', estados: 'Estados financieros', impuestos: 'Impuestos (IVA / PPM / F29)', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
 function go(v) {
   stopFlujoAuto();
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, indicadores: vIndicadores, estados: vEstados, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, indicadores: vIndicadores, estados: vEstados, impuestos: vImpuestos, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
 
@@ -239,6 +239,116 @@ async function renderEstados() {
       </table></div></div>`;
   }
 }
+
+
+let impTab = 'f29', impMes = hoy().slice(0, 7);
+function vImpuestos() {
+  C().innerHTML = `<div class="tabs">
+    <button data-t="f29">Propuesta F29</button>
+    <button data-t="ventas">Libro Ventas</button>
+    <button data-t="compras">Libro Compras</button>
+    <button data-t="config">Configuracion</button></div>
+    <div class="row" style="margin:10px 0"><div class="field" style="max-width:180px"><label>Periodo (mes)</label><input id="impMes" type="month" value="${impMes}" onchange="impMes=this.value;renderImp()"></div></div>
+    <div id="impBody"></div>`;
+  C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { impTab = b.dataset.t; renderImpTabs(); }));
+  renderImpTabs();
+}
+function renderImpTabs() { C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === impTab)); const s = document.getElementById('impMes'); if (s) s.value = impMes; renderImp(); }
+async function renderImp() {
+  if (impTab === 'f29') return renderF29();
+  if (impTab === 'config') return renderImpConfig();
+  return renderLibro(impTab === 'compras' ? 'COMPRA' : 'VENTA');
+}
+async function renderF29() {
+  const d = await api('GET', '/impuestos/f29?mes=' + impMes);
+  const row = (c, lbl, v, strong) => `<tr${strong ? ' style="background:#f4f7fb;font-weight:600"' : ''}><td>${c ? '<span class="muted">' + c + '</span> ' : ''}${lbl}</td><td class="num">${clp(v)}</td></tr>`;
+  document.getElementById('impBody').innerHTML = `
+  <div class="grid g3">
+    <div class="kpi"><div class="lbl">IVA a pagar</div><div class="val">${clp(d.ivaPagar)}</div></div>
+    <div class="kpi"><div class="lbl">PPM (${d.ppm_tasa}%)</div><div class="val">${clp(d.ppm)}</div></div>
+    <div class="kpi"><div class="lbl">Total F29 a pagar</div><div class="val" style="color:var(--azul)">${clp(d.totalF29)}</div></div></div>
+  <div class="card"><h3>Propuesta Formulario 29 <span class="muted">${impMes} &middot; ${d.nVentas} ventas / ${d.nCompras} compras</span></h3>
+    <table><tr><th>Concepto</th><th class="num">Monto</th></tr>
+    ${row('538', 'IVA Debito Fiscal (ventas)', d.debito)}
+    ${row('537', 'IVA Credito Fiscal (compras del giro)', d.credito)}
+    ${row('', 'Remanente periodo anterior', d.remanenteAnterior)}
+    ${row('', 'IVA a pagar (debito - credito - remanente)', d.ivaPagar, true)}
+    ${row('077', 'Remanente para el proximo mes', d.remanenteNuevo)}
+    <tr style="background:#eaf0f6"><td colspan="2" style="font-weight:600;color:var(--azul)">PPM (Pago Provisional Mensual)</td></tr>
+    ${row('563', 'Base imponible (ventas netas + exentas)', d.basePPM)}
+    ${row('062', 'PPM (' + d.ppm_tasa + '% sobre la base)', d.ppm, true)}
+    <tr style="background:#dce6f2"><td><b><span class="muted">091</span> TOTAL A PAGAR (IVA + PPM)</b></td><td class="num"><b>${clp(d.totalF29)}</b></td></tr>
+    </table>
+    <p class="muted" style="font-size:12px;margin-top:8px">Propuesta referencial segun los documentos cargados del mes. El remanente anterior se ajusta en la pestana Configuracion. No reemplaza la declaracion oficial del SII.</p></div>`;
+}
+async function renderLibro(clase) {
+  const d = await api('GET', '/impuestos/libro?clase=' + clase + '&mes=' + impMes);
+  const esC = clase === 'COMPRA';
+  document.getElementById('impBody').innerHTML = `
+  <div class="card"><h3>Libro de ${esC ? 'Compras' : 'Ventas'} <span class="muted">${impMes}</span>
+    <span style="float:right"><button class="btn" onclick="formDocIva('${clase}')">+ Agregar documento</button> <label class="btn ghost" style="cursor:pointer;margin:0">Importar CSV (RCV)<input type="file" accept=".csv" style="display:none" onchange="importarRCV('${clase}',this)"></label></span></h3>
+    <div class="scroll"><table><tr><th>Fecha</th><th>Tipo</th><th>Folio</th><th>RUT</th><th>${esC ? 'Proveedor' : 'Cliente'}</th>${esC ? '<th>Giro</th>' : ''}<th class="num">Neto</th><th class="num">Exento</th><th class="num">IVA</th><th class="num">Total</th><th></th></tr>
+    ${d.docs.length ? d.docs.map(x => `<tr><td>${fdate(x.fecha)}</td><td>${esc(x.tipo_doc || '')}</td><td>${esc(x.folio || '')}</td><td>${esc(x.rut || '')}</td><td>${esc(x.razon_social || '')}</td>${esC ? '<td>' + esc(x.giro || '') + '</td>' : ''}<td class="num">${clp(x.neto)}</td><td class="num">${clp(x.exento)}</td><td class="num">${clp(x.iva)}</td><td class="num">${clp(x.total)}</td><td>${String(x.id).startsWith('L') ? `<button class="btn sm red" onclick="delDocIva(${String(x.id).slice(1)})">x</button>` : '<span class="muted" title="Proviene de Cuentas por cobrar/pagar">CxP</span>'}</td></tr>`).join('') : `<tr><td colspan="${esC ? 11 : 10}" class="empty">Sin documentos este mes</td></tr>`}
+    <tr style="background:#dce6f2;font-weight:600"><td colspan="${esC ? 6 : 5}">TOTAL</td><td class="num">${clp(d.totales.neto)}</td><td class="num">${clp(d.totales.exento)}</td><td class="num">${clp(d.totales.iva)}</td><td class="num">${clp(d.totales.total)}</td><td></td></tr>
+    </table></div>
+    <p class="muted" style="font-size:12px;margin-top:6px">Incluye los documentos cargados aqui y las facturas de Cuentas por ${esC ? 'pagar' : 'cobrar'} con desglose de IVA del mes.</p></div>`;
+}
+function formDocIva(clase) {
+  const esC = clase === 'COMPRA';
+  modal(`<h3>Agregar documento ${esC ? 'de compra' : 'de venta'}</h3>
+    <div class="row"><div class="field"><label>Fecha</label><input id="diF" type="date" value="${hoy()}"></div><div class="field"><label>Tipo doc</label><select id="diTD"><option>FACTURA</option><option>BOLETA</option><option>NOTA_CREDITO</option><option>NOTA_DEBITO</option><option>FACTURA_EXENTA</option></select></div><div class="field"><label>Folio</label><input id="diFolio"></div></div>
+    <div class="row"><div class="field"><label>RUT</label><input id="diRut"></div><div class="field"><label>${esC ? 'Proveedor' : 'Cliente'}</label><input id="diRz"></div></div>
+    <div class="row"><div class="field"><label>Neto</label><input id="diNeto" type="number" oninput="diCalc()"></div><div class="field"><label>IVA</label><input id="diIva" type="number"></div><div class="field"><label>Exento</label><input id="diExento" type="number"></div></div>
+    ${esC ? `<div class="row"><div class="field"><label>Giro (uso del credito)</label><select id="diGiro"><option value="GIRO">Del giro</option><option value="SUPERMERCADO">Supermercado</option><option value="BIENES_CAPITAL">Bienes de capital</option><option value="NO_INCLUIR">No corresponde incluir</option></select></div></div>` : ''}
+    <div class="err" id="diErr"></div>
+    <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarDocIva('${clase}')">Guardar</button></div>`);
+}
+function diCalc() { const neto = Number(val('diNeto')) || 0; const fi = document.getElementById('diIva'); if (fi && !fi.value) fi.value = Math.round(neto * 0.19); }
+async function guardarDocIva(clase) {
+  try { await api('POST', '/impuestos/libro', { clase, fecha: val('diF'), tipo_doc: val('diTD'), folio: val('diFolio'), rut: val('diRut'), razon_social: val('diRz'), neto: val('diNeto'), iva: val('diIva'), exento: val('diExento'), giro: clase === 'COMPRA' ? val('diGiro') : null }); closeModal(); renderImp(); }
+  catch (e) { $('#diErr').textContent = e.message; }
+}
+async function delDocIva(id) { if (confirm('Eliminar este documento del libro?')) { window._sinConfirmar = true; try { await api('DELETE', '/impuestos/libro/' + id); } finally { window._sinConfirmar = false; } renderImp(); } }
+async function renderImpConfig() {
+  const c = await api('GET', '/impuestos/config');
+  document.getElementById('impBody').innerHTML = `<div class="card"><h3>Configuracion de impuestos</h3>
+    <div class="row"><div class="field" style="max-width:200px"><label>Tasa PPM (%)</label><input id="cfPpm" type="number" step="0.01" value="${c.ppm_tasa}"></div>
+      <div class="field" style="max-width:200px"><label>Tasa IVA (%)</label><input id="cfIva" type="number" step="0.01" value="${c.iva_tasa}"></div>
+      <div class="field" style="max-width:240px"><label>Remanente IVA mes anterior</label><input id="cfRem" type="number" value="${c.remanente}"></div></div>
+    <div class="err" id="cfErr"></div>
+    <div class="right" style="margin-top:10px"><button class="btn" onclick="guardarImpConfig()">Guardar</button></div>
+    <p class="muted" style="font-size:12px">La tasa PPM se aplica por empresa (Trabancura y JMC tienen tasas distintas). El remanente se arrastra del F29 del mes anterior; ajustalo si quedo saldo a favor.</p></div>`;
+}
+async function guardarImpConfig() { try { await api('POST', '/impuestos/config', { ppm_tasa: val('cfPpm'), iva_tasa: val('cfIva'), remanente: val('cfRem') }); alert('Configuracion guardada.'); renderImp(); } catch (e) { $('#cfErr').textContent = e.message; } }
+function importarRCV(clase, input) {
+  const file = input.files[0]; if (!file) return;
+  const rd = new FileReader();
+  rd.onload = async () => {
+    try {
+      const filas = parseRCV(String(rd.result));
+      if (!filas.length) { alert('No se reconocieron filas en el CSV. Revisa que tenga encabezados (Fecha, RUT, Neto, IVA...).'); return; }
+      const r = await api('POST', '/impuestos/importar', { clase, filas });
+      alert('Importados ' + r.insertados + ' documentos al libro de ' + (clase === 'COMPRA' ? 'compras' : 'ventas') + '.'); renderImp();
+    } catch (e) { alert('Error al importar: ' + e.message); }
+  };
+  rd.readAsText(file, 'latin1');
+}
+function parseRCV(txt) {
+  const lines = txt.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  const sep = lines[0].split(';').length > lines[0].split(',').length ? ';' : ',';
+  const head = lines[0].split(sep).map(h => h.trim().toLowerCase());
+  const find = (...keys) => head.findIndex(h => keys.some(k => h.includes(k)));
+  const iFecha = find('fecha docto', 'fecha emis', 'fecha'), iRut = find('rut'), iRz = find('razon', 'nombre'), iTD = find('tipo doc', 'tipo'), iFolio = find('folio', 'nro'), iNeto = find('neto'), iIva = find('iva'), iEx = find('exento'), iTot = find('total');
+  const num = (v) => Number(String(v || '').replace(/[^0-9-]/g, '')) || 0;
+  const fdt = (v) => { v = String(v || '').trim(); let m = v.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/); if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); m = v.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/); if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0'); return v.slice(0, 10); };
+  const out = [];
+  for (let i = 1; i < lines.length; i++) { const c = lines[i].split(sep); if (c.length < 2) continue;
+    out.push({ fecha: fdt(iFecha >= 0 ? c[iFecha] : ''), rut: iRut >= 0 ? (c[iRut] || '').trim() : '', razon_social: iRz >= 0 ? (c[iRz] || '').trim() : '', tipo_doc: iTD >= 0 ? (c[iTD] || '').trim() : '', folio: iFolio >= 0 ? (c[iFolio] || '').trim() : '', neto: iNeto >= 0 ? num(c[iNeto]) : 0, iva: iIva >= 0 ? num(c[iIva]) : 0, exento: iEx >= 0 ? num(c[iEx]) : 0, total: iTot >= 0 ? num(c[iTot]) : 0 });
+  }
+  return out.filter(r => r.fecha);
+}
+function facIvaCalc() { const neto = Number(val('faNeto')) || 0, ex = Number(val('faExento')) || 0; const iva = Math.round(neto * 0.19); const fi = document.getElementById('faIva'); if (fi) fi.value = iva; const fm = document.getElementById('faM'); if (fm) fm.value = neto + iva + ex; }
 
 // ===================== DASHBOARD =====================
 async function vDashboard() {
@@ -1224,13 +1334,16 @@ function formFactura(id) {
   modal(`<h3>${id ? 'Editar' : 'Nueva'} factura ${esCobrar ? 'por cobrar' : 'por pagar'}</h3>
     <div class="row"><div class="field"><label>${esCobrar ? 'Cliente' : 'Proveedor'}</label><input id="faC" value="${f ? esc(f.contraparte || '') : ''}"></div><div class="field"><label>RUT</label><input id="faR" value="${f ? esc(f.rut || '') : ''}"></div></div>
     <div class="row"><div class="field"><label>N&deg; Factura</label><input id="faN" value="${f ? esc(f.numero || '') : ''}"></div><div class="field"><label>Monto</label><input id="faM" type="number" value="${f ? f.monto : ''}"></div></div>
+    <div class="row"><div class="field"><label>Tipo doc</label><select id="faTD"><option ${f&&f.tipo_doc==='FACTURA'?'selected':''}>FACTURA</option><option ${f&&f.tipo_doc==='BOLETA'?'selected':''}>BOLETA</option><option ${f&&f.tipo_doc==='NOTA_CREDITO'?'selected':''}>NOTA_CREDITO</option><option ${f&&f.tipo_doc==='NOTA_DEBITO'?'selected':''}>NOTA_DEBITO</option><option ${f&&f.tipo_doc==='FACTURA_EXENTA'?'selected':''}>FACTURA_EXENTA</option></select></div>
+      <div class="field"><label>Neto</label><input id="faNeto" type="number" oninput="facIvaCalc()" value="${f&&f.neto?f.neto:''}"></div><div class="field"><label>IVA (19%)</label><input id="faIva" type="number" value="${f&&f.iva?f.iva:''}"></div><div class="field"><label>Exento</label><input id="faExento" type="number" oninput="facIvaCalc()" value="${f&&f.exento?f.exento:''}"></div></div>
+    ${!esCobrar ? `<div class="row"><div class="field"><label>Giro (uso del credito fiscal)</label><select id="faGiro"><option value="GIRO" ${f&&f.giro==='GIRO'?'selected':''}>Del giro</option><option value="SUPERMERCADO" ${f&&f.giro==='SUPERMERCADO'?'selected':''}>Supermercado</option><option value="BIENES_CAPITAL" ${f&&f.giro==='BIENES_CAPITAL'?'selected':''}>Bienes de capital</option><option value="NO_INCLUIR" ${f&&f.giro==='NO_INCLUIR'?'selected':''}>No corresponde incluir</option></select></div></div>` : ''}
     <div class="row"><div class="field"><label>Fecha emision</label><input id="faE" type="date" value="${f && f.fecha_emision ? fdate(f.fecha_emision) : ''}"></div><div class="field"><label>Fecha vencimiento</label><input id="faV" type="date" value="${f && f.fecha_vencimiento ? fdate(f.fecha_vencimiento) : ''}"></div></div>
     <div class="row"><div class="field"><label>Glosa / detalle</label><input id="faG" value="${f ? esc(f.glosa || '') : ''}"></div></div>
     <div class="err" id="faErr"></div>
     <div class="right" style="margin-top:14px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarFactura(${id || 0})">Guardar</button></div>`);
 }
 async function guardarFactura(id) {
-  const body = { tipo: facTipo, contraparte: val('faC'), rut: val('faR'), numero: val('faN'), monto: val('faM'), fecha_emision: val('faE'), fecha_vencimiento: val('faV'), glosa: val('faG') };
+  const body = { tipo: facTipo, contraparte: val('faC'), rut: val('faR'), numero: val('faN'), monto: val('faM'), fecha_emision: val('faE'), fecha_vencimiento: val('faV'), glosa: val('faG'), neto: val('faNeto'), iva: val('faIva'), exento: val('faExento'), tipo_doc: val('faTD'), giro: facTipo === 'COBRAR' ? null : val('faGiro') };
   if (!body.fecha_vencimiento || !body.monto) { $('#faErr').textContent = 'Fecha de vencimiento y monto son obligatorios.'; return; }
   try { if (id) await api('PUT', '/facturas/' + id, body); else await api('POST', '/facturas', body); closeModal(); facLista(); }
   catch (e) { $('#faErr').textContent = e.message; }

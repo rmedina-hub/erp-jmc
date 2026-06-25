@@ -30,9 +30,10 @@ router.post('/', (req, res) => {
   const b = req.body;
   const tipo = (b.tipo || 'COBRAR').toUpperCase() === 'PAGAR' ? 'PAGAR' : 'COBRAR';
   if (!b.fecha_vencimiento || !b.monto) return res.status(400).json({ error: 'fecha de vencimiento y monto requeridos' });
-  const r = db.prepare(`INSERT INTO facturas (empresa,tipo,contraparte,rut,numero,glosa,fecha_emision,fecha_vencimiento,monto,estado)
-    VALUES (?,?,?,?,?,?,?,?,?,'PENDIENTE')`).run(req.empresa, tipo, b.contraparte || null, b.rut || null, b.numero || null,
-    b.glosa || null, b.fecha_emision || null, b.fecha_vencimiento, Math.abs(Number(b.monto)) || 0);
+  const r = db.prepare(`INSERT INTO facturas (empresa,tipo,contraparte,rut,numero,glosa,fecha_emision,fecha_vencimiento,monto,estado,neto,iva,exento,giro,tipo_doc)
+    VALUES (?,?,?,?,?,?,?,?,?,'PENDIENTE',?,?,?,?,?)`).run(req.empresa, tipo, b.contraparte || null, b.rut || null, b.numero || null,
+    b.glosa || null, b.fecha_emision || null, b.fecha_vencimiento, Math.abs(Number(b.monto)) || 0,
+    Number(b.neto) || 0, Number(b.iva) || 0, Number(b.exento) || 0, b.giro || null, b.tipo_doc || null);
   audit(req, 'Cuentas C/P', tipo === 'COBRAR' ? 'Crear cuenta por cobrar' : 'Crear cuenta por pagar',
     (b.contraparte || '') + ' ' + (b.numero ? 'Fac ' + b.numero + ' ' : '') + r2(b.monto));
   res.json(db.prepare('SELECT * FROM facturas WHERE id=?').get(r.lastInsertRowid));
@@ -42,12 +43,14 @@ router.put('/:id', (req, res) => {
   const b = req.body;
   const f = db.prepare('SELECT * FROM facturas WHERE id=? AND empresa=?').get(req.params.id, req.empresa);
   if (!f) return res.status(404).json({ error: 'No existe' });
-  db.prepare(`UPDATE facturas SET contraparte=?, rut=?, numero=?, glosa=?, fecha_emision=?, fecha_vencimiento=?, monto=?, tipo=? WHERE id=? AND empresa=?`)
+  db.prepare(`UPDATE facturas SET contraparte=?, rut=?, numero=?, glosa=?, fecha_emision=?, fecha_vencimiento=?, monto=?, tipo=?, neto=?, iva=?, exento=?, giro=?, tipo_doc=? WHERE id=? AND empresa=?`)
     .run(b.contraparte != null ? b.contraparte : f.contraparte, b.rut != null ? b.rut : f.rut,
       b.numero != null ? b.numero : f.numero, b.glosa != null ? b.glosa : f.glosa,
       b.fecha_emision != null ? b.fecha_emision : f.fecha_emision,
       b.fecha_vencimiento || f.fecha_vencimiento, b.monto != null ? Math.abs(Number(b.monto)) : f.monto,
-      b.tipo ? b.tipo.toUpperCase() : f.tipo, req.params.id, req.empresa);
+      b.tipo ? b.tipo.toUpperCase() : f.tipo,
+      b.neto != null ? Number(b.neto) : f.neto, b.iva != null ? Number(b.iva) : f.iva, b.exento != null ? Number(b.exento) : f.exento,
+      b.giro != null ? b.giro : f.giro, b.tipo_doc != null ? b.tipo_doc : f.tipo_doc, req.params.id, req.empresa);
   audit(req, 'Cuentas C/P', 'Editar factura', (b.contraparte != null ? b.contraparte : f.contraparte) || '');
   res.json(db.prepare('SELECT * FROM facturas WHERE id=?').get(req.params.id));
 });

@@ -178,6 +178,15 @@ CREATE TABLE IF NOT EXISTS auditoria (
   usuario_id INTEGER, usuario_nombre TEXT, usuario_email TEXT, rol TEXT, empresa TEXT,
   modulo TEXT, accion TEXT, detalle TEXT);
 
+CREATE TABLE IF NOT EXISTS libro_iva (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT, clase TEXT NOT NULL,
+  fecha TEXT NOT NULL, rut TEXT, razon_social TEXT, tipo_doc TEXT, folio TEXT,
+  neto REAL NOT NULL DEFAULT 0, iva REAL NOT NULL DEFAULT 0, exento REAL NOT NULL DEFAULT 0, total REAL NOT NULL DEFAULT 0,
+  giro TEXT, origen TEXT DEFAULT 'MANUAL', created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS impuesto_config (
+  empresa TEXT PRIMARY KEY, ppm_tasa REAL NOT NULL DEFAULT 0, iva_tasa REAL NOT NULL DEFAULT 19, remanente REAL NOT NULL DEFAULT 0);
+
 CREATE TABLE IF NOT EXISTS _meta (clave TEXT PRIMARY KEY, valor TEXT);
 `);
 
@@ -215,9 +224,19 @@ const ADD_COLS = [
   "ALTER TABLE activos ADD COLUMN eliminado_por TEXT",
   "ALTER TABLE activos ADD COLUMN mantencion_intervalo_km REAL DEFAULT 0",
   "ALTER TABLE activo_mantenciones ADD COLUMN empresa TEXT",
-  "ALTER TABLE usuarios ADD COLUMN token_version INTEGER DEFAULT 0"
+  "ALTER TABLE usuarios ADD COLUMN token_version INTEGER DEFAULT 0",
+  "ALTER TABLE facturas ADD COLUMN neto REAL DEFAULT 0",
+  "ALTER TABLE facturas ADD COLUMN iva REAL DEFAULT 0",
+  "ALTER TABLE facturas ADD COLUMN exento REAL DEFAULT 0",
+  "ALTER TABLE facturas ADD COLUMN giro TEXT",
+  "ALTER TABLE facturas ADD COLUMN tipo_doc TEXT"
 ];
 for (const sql of ADD_COLS) { try { db.exec(sql); } catch (e) {} }
+// Seed de configuracion de impuestos por empresa (PPM)
+try {
+  db.exec("INSERT OR IGNORE INTO impuesto_config (empresa, ppm_tasa, iva_tasa, remanente) VALUES ('jmc', 3, 19, 0)");
+  db.exec("INSERT OR IGNORE INTO impuesto_config (empresa, ppm_tasa, iva_tasa, remanente) VALUES ('trabancura', 12.7, 19, 0)");
+} catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_auditoria_emp_ts ON auditoria(empresa, ts)'); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_facturas_emp ON facturas(empresa, estado, fecha_vencimiento)'); } catch (e) {}
 try { db.exec('CREATE INDEX IF NOT EXISTS ix_archivos_ent ON archivos(entidad, entidad_id)'); } catch (e) {}
@@ -232,7 +251,7 @@ try { db.exec('CREATE INDEX IF NOT EXISTS ix_cajamov_emp ON caja_chica_mov(empre
 // ---- Backfill: todos los datos preexistentes (empresa NULL) pasan a JMC ----
 const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancarias', 'tes_movimientos',
   'cartola_lineas', 'creditos', 'credito_cuotas', 'activos', 'activo_kilometrajes', 'activo_seguros',
-  'activo_documentos', 'activo_mantenciones', 'flujo_proyeccion'];
+  'activo_documentos', 'activo_mantenciones', 'flujo_proyeccion', 'libro_iva'];
 (function backfillEmpresa() {
   const done = db.prepare("SELECT valor FROM _meta WHERE clave='backfill_empresa'").get();
   if (done) return;

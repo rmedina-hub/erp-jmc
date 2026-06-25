@@ -52,6 +52,7 @@ app.use('/api/cajachica', require('./cajachica'));
 app.use('/api/compras', require('./compras'));
 app.use('/api/indicadores', require('./indicadores'));
 app.use('/api/estados', require('./estados'));
+app.use('/api/impuestos', require('./impuestos'));
 
 app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
