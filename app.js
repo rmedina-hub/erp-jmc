@@ -419,7 +419,19 @@ async function renderF29() {
     ${row('062', 'PPM (' + d.ppm_tasa + '% sobre la base)', d.ppm, true)}
     <tr style="background:#dce6f2"><td><b><span class="muted">091</span> TOTAL A PAGAR (IVA + PPM)</b></td><td class="num"><b>${clp(d.totalF29)}</b></td></tr>
     </table>
-    <p class="muted" style="font-size:12px;margin-top:8px">Propuesta referencial segun los documentos cargados del mes. El remanente anterior se ajusta en la pestana Configuracion. No reemplaza la declaracion oficial del SII.</p></div>`;
+    <p class="muted" style="font-size:12px;margin-top:8px">Propuesta referencial segun los documentos cargados del mes. El remanente anterior se ajusta en la pestana Configuracion. No reemplaza la declaracion oficial del SII.</p>
+    <div style="margin-top:12px;border-top:1px solid var(--linea);padding-top:12px"><button class="btn" onclick="centralizarMes()">Generar asiento contable de centralizacion (IVA/PPM)</button> <span id="centRes" class="muted" style="margin-left:8px"></span></div></div>`;
+}
+async function centralizarMes() {
+  const r = document.getElementById('centRes'); if (r) r.textContent = 'Generando...';
+  try {
+    let d = await api('POST', '/impuestos/centralizar', { mes: impMes });
+    if (d.ya_existe) {
+      if (!confirm('Ya existe el asiento de centralizacion N' + d.numero + ' para ' + impMes + '. Regenerarlo con los datos actuales?')) { if (r) r.innerHTML = '<span style="color:var(--amarillo)">Ya existia el asiento N' + d.numero + '.</span>'; return; }
+      d = await api('POST', '/impuestos/centralizar', { mes: impMes, force: true });
+    }
+    if (r) r.innerHTML = '<span style="color:var(--verde)">Asiento N' + d.numero + ' ' + (d.regenerado ? 'regenerado' : 'generado') + '. Revisalo en Contabilidad &rarr; Libro Diario.</span>';
+  } catch (e) { if (r) r.innerHTML = '<span style="color:var(--rojo)">' + e.message + '</span>'; }
 }
 async function renderLibro(clase) {
   const d = await api('GET', '/impuestos/libro?clase=' + clase + '&mes=' + impMes);
