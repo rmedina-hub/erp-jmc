@@ -187,6 +187,23 @@ CREATE TABLE IF NOT EXISTS libro_iva (
 CREATE TABLE IF NOT EXISTS impuesto_config (
   empresa TEXT PRIMARY KEY, ppm_tasa REAL NOT NULL DEFAULT 0, iva_tasa REAL NOT NULL DEFAULT 19, remanente REAL NOT NULL DEFAULT 0);
 
+CREATE TABLE IF NOT EXISTS plan_cuentas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT,
+  codigo TEXT NOT NULL, nombre TEXT NOT NULL, tipo TEXT NOT NULL,
+  imputable INTEGER NOT NULL DEFAULT 1, activo INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS asientos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, empresa TEXT,
+  numero INTEGER, fecha TEXT NOT NULL, glosa TEXT,
+  tipo TEXT NOT NULL DEFAULT 'MANUAL', origen TEXT, ref TEXT,
+  creado_por TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')));
+
+CREATE TABLE IF NOT EXISTS asiento_lineas (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, asiento_id INTEGER NOT NULL, empresa TEXT,
+  cuenta_codigo TEXT NOT NULL, cuenta_nombre TEXT, glosa TEXT,
+  debe REAL NOT NULL DEFAULT 0, haber REAL NOT NULL DEFAULT 0);
+
 CREATE TABLE IF NOT EXISTS _meta (clave TEXT PRIMARY KEY, valor TEXT);
 `);
 
@@ -325,8 +342,8 @@ const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancari
   const tmp = bcrypt.hashSync('Jmc2026.', 10);
   const users = [
     ['Robin Medina', 'rmedina@jmcingenieria.cl', 'admin', 'jmc'],
-    ['Johanna Palma', 'jpalma@jmcingenieria.cl', 'usuario', 'jmc'],
-    ['Mariana Duran', 'administracion1@jmcingenieria.cl', 'usuario', 'jmc'],
+    ['Johanna Palma', 'jpalma@jmcingenieria.cl', 'usuario', 'trabancura'],
+    ['Mariana Duran', 'administracion1@jmcingenieria.cl', 'usuario', 'trabancura'],
     ['Genesis Valles', 'gvalles@jmcingenieria.cl', 'usuario', 'jmc'],
     ['Adrian Yanez', 'finanzas@jmcingenieria.cl', 'usuario', null],
     ['Maria Isabel Slatter', 'administracion2@jmcingenieria.cl', 'usuario', 'jmc']
@@ -341,13 +358,44 @@ const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancari
 (function fixUsuarios() {
   try {
     const upd = db.prepare('UPDATE usuarios SET nombre=?, empresa=? WHERE email=?');
-    [['Robin Medina', null, 'rmedina@jmcingenieria.cl'], ['Johanna Palma', 'jmc', 'jpalma@jmcingenieria.cl'],
-     ['Mariana Duran', 'jmc', 'administracion1@jmcingenieria.cl'], ['Genesis Valles', null, 'gvalles@jmcingenieria.cl'],
+    [['Robin Medina', null, 'rmedina@jmcingenieria.cl'], ['Johanna Palma', 'trabancura', 'jpalma@jmcingenieria.cl'],
+     ['Mariana Duran', 'trabancura', 'administracion1@jmcingenieria.cl'], ['Genesis Valles', null, 'gvalles@jmcingenieria.cl'],
      ['Adrian Yanez', null, 'finanzas@jmcingenieria.cl'], ['Maria Isabel Slatter', null, 'administracion2@jmcingenieria.cl']
     ].forEach(u => upd.run(u[0], u[1], u[2]));
-    // Robin es administrador de ambas empresas
     db.prepare("UPDATE usuarios SET rol='admin' WHERE email='rmedina@jmcingenieria.cl'").run();
     db.prepare("DELETE FROM usuarios WHERE email='adrian@jmcingenieria.cl'").run();
+    if (!db.prepare("SELECT 1 FROM _meta WHERE clave='fix_emp_trab_v1'").get()) {
+      db.prepare("UPDATE usuarios SET token_version=COALESCE(token_version,0)+1 WHERE email IN ('jpalma@jmcingenieria.cl','administracion1@jmcingenieria.cl')").run();
+      db.prepare("INSERT OR REPLACE INTO _meta (clave,valor) VALUES ('fix_emp_trab_v1', datetime('now'))").run();
+    }
+  } catch (e) {}
+})();
+
+
+(function seedPlanCuentas() {
+  try {
+    const PLAN = [
+      ['1.1.01','Caja','ACTIVO'], ['1.1.02','Banco','ACTIVO'],
+      ['1.1.03','Clientes (CxC)','ACTIVO'], ['1.1.04','IVA Credito Fiscal','ACTIVO'],
+      ['1.1.05','PPM','ACTIVO'], ['1.1.06','Existencias / Inventario','ACTIVO'],
+      ['1.2.01','Activo Fijo','ACTIVO'], ['1.2.02','Depreciacion Acumulada','ACTIVO'],
+      ['2.1.01','Proveedores (CxP)','PASIVO'], ['2.1.02','IVA Debito Fiscal','PASIVO'],
+      ['2.1.03','PPM por Pagar','PASIVO'], ['2.1.04','Honorarios / Retenciones por Pagar','PASIVO'],
+      ['2.1.05','Remuneraciones por Pagar','PASIVO'], ['2.1.06','Impuesto Renta por Pagar','PASIVO'],
+      ['2.2.01','Prestamos / Leasing por Pagar','PASIVO'],
+      ['3.1.01','Capital','PATRIMONIO'], ['3.1.02','Resultados Acumulados','PATRIMONIO'],
+      ['3.1.03','Resultado del Ejercicio','PATRIMONIO'],
+      ['4.1.01','Ventas / Ingresos por Servicios','INGRESO'], ['4.1.02','Otros Ingresos','INGRESO'],
+      ['5.1.01','Costo de Ventas','GASTO'], ['5.2.01','Remuneraciones','GASTO'],
+      ['5.2.02','Honorarios','GASTO'], ['5.2.03','Arriendos','GASTO'],
+      ['5.2.04','Servicios Basicos','GASTO'], ['5.2.05','Gastos Generales','GASTO'],
+      ['5.2.06','Depreciacion','GASTO'], ['5.2.07','Gastos Financieros','GASTO']
+    ];
+    const ins = db.prepare('INSERT INTO plan_cuentas (empresa,codigo,nombre,tipo,imputable) VALUES (?,?,?,?,1)');
+    for (const emp of ['jmc','trabancura']) {
+      const n = db.prepare('SELECT COUNT(*) c FROM plan_cuentas WHERE empresa=?').get(emp).c;
+      if (!n) for (const [cod,nom,tipo] of PLAN) ins.run(emp, cod, nom, tipo);
+    }
   } catch (e) {}
 })();
 
