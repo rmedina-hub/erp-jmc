@@ -362,6 +362,7 @@ const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancari
      ['Mariana Duran', 'trabancura', 'administracion1@jmcingenieria.cl'], ['Genesis Valles', null, 'gvalles@jmcingenieria.cl'],
      ['Adrian Yanez', null, 'finanzas@jmcingenieria.cl'], ['Maria Isabel Slatter', null, 'administracion2@jmcingenieria.cl']
     ].forEach(u => upd.run(u[0], u[1], u[2]));
+    // Robin es administrador de ambas empresas
     db.prepare("UPDATE usuarios SET rol='admin' WHERE email='rmedina@jmcingenieria.cl'").run();
     db.prepare("DELETE FROM usuarios WHERE email='adrian@jmcingenieria.cl'").run();
     if (!db.prepare("SELECT 1 FROM _meta WHERE clave='fix_emp_trab_v1'").get()) {
@@ -382,6 +383,7 @@ const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancari
       ['2.1.01','Proveedores (CxP)','PASIVO'], ['2.1.02','IVA Debito Fiscal','PASIVO'],
       ['2.1.03','PPM por Pagar','PASIVO'], ['2.1.04','Honorarios / Retenciones por Pagar','PASIVO'],
       ['2.1.05','Remuneraciones por Pagar','PASIVO'], ['2.1.06','Impuesto Renta por Pagar','PASIVO'],
+      ['2.1.07','IVA por Pagar (F29)','PASIVO'],
       ['2.2.01','Prestamos / Leasing por Pagar','PASIVO'],
       ['3.1.01','Capital','PATRIMONIO'], ['3.1.02','Resultados Acumulados','PATRIMONIO'],
       ['3.1.03','Resultado del Ejercicio','PATRIMONIO'],
@@ -392,9 +394,9 @@ const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancari
       ['5.2.06','Depreciacion','GASTO'], ['5.2.07','Gastos Financieros','GASTO']
     ];
     const ins = db.prepare('INSERT INTO plan_cuentas (empresa,codigo,nombre,tipo,imputable) VALUES (?,?,?,?,1)');
+    const has = db.prepare('SELECT 1 FROM plan_cuentas WHERE empresa=? AND codigo=?');
     for (const emp of ['jmc','trabancura']) {
-      const n = db.prepare('SELECT COUNT(*) c FROM plan_cuentas WHERE empresa=?').get(emp).c;
-      if (!n) for (const [cod,nom,tipo] of PLAN) ins.run(emp, cod, nom, tipo);
+      for (const [cod,nom,tipo] of PLAN) { if (!has.get(emp, cod)) ins.run(emp, cod, nom, tipo); }
     }
   } catch (e) {}
 })();
