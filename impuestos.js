@@ -105,4 +105,54 @@ router.get('/f29', (req, res) => {
   });
 });
 
+// ---------- Centralizacion contable IVA/PPM ----------
+function centralizacionLineas(empresa, mes) {
+  const c = cfg(empresa);
+  const ventas = docsMes(empresa, 'VENTA', mes);
+  const compras = docsMes(empresa, 'COMPRA', mes);
+  const debito = r2(ventas.reduce((a, d) => a + d.iva, 0));
+  const creditoDocs = compras.filter(d => !['NO_INCLUIR', 'NO_CORRESPONDE'].includes(String(d.giro || '').toUpperCase()));
+  const credito = r2(creditoDocs.reduce((a, d) => a + d.iva, 0));
+  const basePPM = r2(ventas.reduce((a, d) => a + d.neto + d.exento, 0));
+  const ppm = Math.round(basePPM * (Number(c.ppm_tasa) || 0) / 100);
+  const nombre = (cod) => { const x = db.prepare('SELECT nombre FROM plan_cuentas WHERE empresa=? AND codigo=?').get(empresa, cod); return x ? x.nombre : ''; };
+  const L = [];
+  const add = (cod, debe, haber) => { if (r2(debe) || r2(haber)) L.push({ cuenta_codigo: cod, cuenta_nombre: nombre(cod), debe: r2(debe), haber: r2(haber) }); };
+  if (debito) add('2.1.02', debito, 0);
+  if (credito) add('1.1.04', 0, credito);
+  const netoIva = r2(debito - credito);
+  if (netoIva > 0) add('2.1.07', 0, netoIva);
+  else if (netoIva < 0) add('2.1.07', -netoIva, 0);
+  if (ppm) { add('1.1.05', ppm, 0); add('2.1.03', 0, ppm); }
+  const td = r2(L.reduce((a, l) => a + l.debe, 0)), th = r2(L.reduce((a, l) => a + l.haber, 0));
+  return { mes, lineas: L, debe: td, haber: th, cuadra: td === th, debito, credito, ppm, netoIva };
+}
+
+router.get('/centralizacion', (req, res) => {
+  const mes = req.query.mes || new Date().toISOString().slice(0, 7);
+  const data = centralizacionLineas(req.empresa, mes);
+  const ex = db.prepare('SELECT id,numero FROM asientos WHERE empresa=? AND ref=?').get(req.empresa, 'CENT-' + mes);
+  res.json({ ...data, ya_existe: !!ex, asiento: ex || null });
+});
+
+router.post('/centralizar', (req, res) => {
+  const mes = req.body.mes || new Date().toISOString().slice(0, 7);
+  const force = !!req.body.force;
+  const data = centralizacionLineas(req.empresa, mes);
+  if (!data.lineas.length) return res.status(400).json({ error: 'No hay IVA ni PPM para centralizar en ' + mes });
+  if (!data.cuadra) return res.status(400).json({ error: 'El asiento no cuadra (' + data.debe + ' vs ' + data.haber + ')' });
+  const ref = 'CENT-' + mes;
+  const ex = db.prepare('SELECT id,numero FROM asientos WHERE empresa=? AND ref=?').get(req.empresa, ref);
+  if (ex && !force) return res.json({ ok: true, ya_existe: true, numero: ex.numero, id: ex.id });
+  if (ex && force) { db.prepare('DELETE FROM asiento_lineas WHERE asiento_id=?').run(ex.id); db.prepare('DELETE FROM asientos WHERE id=?').run(ex.id); }
+  const numero = (db.prepare('SELECT MAX(numero) m FROM asientos WHERE empresa=?').get(req.empresa).m || 0) + 1;
+  const r = db.prepare('INSERT INTO asientos (empresa,numero,fecha,glosa,tipo,origen,ref,creado_por) VALUES (?,?,?,?,?,?,?,?)')
+    .run(req.empresa, numero, finMes(mes), 'Centralizacion IVA/PPM ' + mes, 'IVA', 'IMPUESTOS', ref, req.user.nombre || req.user.email);
+  const insL = db.prepare('INSERT INTO asiento_lineas (asiento_id,empresa,cuenta_codigo,cuenta_nombre,glosa,debe,haber) VALUES (?,?,?,?,?,?,?)');
+  for (const l of data.lineas) insL.run(r.lastInsertRowid, req.empresa, l.cuenta_codigo, l.cuenta_nombre, 'Centralizacion ' + mes, l.debe, l.haber);
+  audit(req, 'Impuestos', 'Centralizacion contable IVA/PPM', mes + ' asiento N' + numero);
+  res.json({ ok: true, numero, id: r.lastInsertRowid, regenerado: !!(ex && force) });
+});
+
 module.exports = router;
+
