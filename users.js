@@ -1,7 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('./db');
-const { sign, auth, admin } = require('./auth');
+const jwt = require('jsonwebtoken');
+const { sign, auth, admin, SECRET } = require('./auth');
 const { audit, auditRaw } = require('./audit');
 const router = express.Router();
 
@@ -77,6 +78,16 @@ router.post('/cambiar-password', auth, (req, res) => {
   audit(req, 'Usuarios', 'Cambio de contrasena propia (sesiones cerradas)', u.email);
   const fresh = db.prepare('SELECT * FROM usuarios WHERE id=?').get(u.id);
   res.json({ ok: true, token: sign(fresh) });
+});
+
+// Cierre de sesion automatico al cerrar/abandonar la pestana (navigator.sendBeacon, sin header Authorization)
+router.post('/cierre', (req, res) => {
+  try {
+    const token = (req.body && req.body.token) || '';
+    const payload = jwt.verify(token, SECRET);
+    auditRaw({ usuario_id: payload.id, usuario_nombre: payload.nombre, usuario_email: payload.email, rol: payload.rol, empresa: (req.body && req.body.empresa) || payload.empresa || null, modulo: 'Sesion', accion: 'Cierre de sesion', detalle: 'cierre automatico (cerro la ventana)' });
+  } catch (e) {}
+  res.json({ ok: true });
 });
 
 module.exports = router;
