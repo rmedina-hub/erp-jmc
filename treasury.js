@@ -144,8 +144,10 @@ router.post('/cartola/import', (req, res) => {
     }
   });
   tx(lineas);
-  audit(req, 'Tesoreria', 'Importar cartola', importadas + ' importadas, ' + omitidas + ' omitidas (cuenta ' + cuenta_id + ')');
-  res.json({ ok: true, importadas, omitidas, lote });
+  const conciliadas = autoConciliar(req.empresa, cuenta_id, 5);
+  const pendientes = db.prepare('SELECT COUNT(*) n FROM cartola_lineas WHERE cuenta_id=? AND empresa=? AND conciliado=0').get(cuenta_id, req.empresa).n;
+  audit(req, 'Tesoreria', 'Importar cartola', importadas + ' importadas, ' + omitidas + ' omitidas, ' + conciliadas + ' conciliadas (cuenta ' + cuenta_id + ')');
+  res.json({ ok: true, importadas, omitidas, conciliadas, pendientes, lote });
 });
 
 router.get('/cartola', (req, res) => {
@@ -173,12 +175,9 @@ router.get('/conciliacion', (req, res) => {
   res.json({ lineas, movimientos: movs });
 });
 
-router.post('/conciliacion/auto', (req, res) => {
-  const { cuenta_id, tolerancia_dias } = req.body;
-  const tol = Number(tolerancia_dias) || 5;
-  if (!cuenta_id) return res.status(400).json({ error: 'cuenta_id requerido' });
-  const lineas = db.prepare('SELECT * FROM cartola_lineas WHERE cuenta_id=? AND empresa=? AND conciliado=0').all(cuenta_id, req.empresa);
-  const movs = db.prepare('SELECT * FROM tes_movimientos WHERE cuenta_id=? AND empresa=? AND conciliado=0').all(cuenta_id, req.empresa);
+function autoConciliar(empresa, cuenta_id, tol) {
+  const lineas = db.prepare('SELECT * FROM cartola_lineas WHERE cuenta_id=? AND empresa=? AND conciliado=0').all(cuenta_id, empresa);
+  const movs = db.prepare('SELECT * FROM tes_movimientos WHERE cuenta_id=? AND empresa=? AND conciliado=0').all(cuenta_id, empresa);
   let conciliadas = 0;
   const tx = db.transaction(() => {
     for (const l of lineas) {
@@ -201,6 +200,14 @@ router.post('/conciliacion/auto', (req, res) => {
     }
   });
   tx();
+  return conciliadas;
+}
+
+router.post('/conciliacion/auto', (req, res) => {
+  const { cuenta_id, tolerancia_dias } = req.body;
+  const tol = Number(tolerancia_dias) || 5;
+  if (!cuenta_id) return res.status(400).json({ error: 'cuenta_id requerido' });
+  const conciliadas = autoConciliar(req.empresa, cuenta_id, tol);
   audit(req, 'Tesoreria', 'Conciliacion automatica', conciliadas + ' conciliadas (cuenta ' + cuenta_id + ')');
   res.json({ ok: true, conciliadas });
 });
