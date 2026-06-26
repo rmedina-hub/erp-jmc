@@ -94,6 +94,42 @@ tr:hover td{background:#f9fbfe}
 .empty{padding:32px;text-align:center;color:var(--gris)}
 .scroll{overflow-x:auto}
 .right{text-align:right}
+
+/* ===== Optimizacion movil ===== */
+@media(max-width:760px){
+  .sidebar{width:60px}
+  .main{margin-left:60px}
+  .brand{padding:12px 6px}
+  .brand img{max-width:46px}
+  .nav a{padding:12px 0;justify-content:center;gap:0}
+  .nav a span:not(.ico){display:none}
+  .nav .ico{font-size:17px}
+  .side-foot{display:none}
+  .topbar{padding:10px 12px;flex-wrap:wrap;gap:8px}
+  .topbar h2{font-size:16px;width:100%}
+  .topbar-right{gap:7px;flex-wrap:wrap;width:100%}
+  .empresa-switch{min-width:120px;flex:1}
+  .user{font-size:12px;width:100%;order:5}
+  .logout{padding:6px 10px;font-size:12px}
+  .content{padding:14px 12px}
+  .card{padding:14px;overflow-x:auto}
+  .card h3{font-size:14px;flex-wrap:wrap}
+  table{font-size:12.5px}
+  th,td{padding:8px 8px}
+  .tabs{gap:5px}
+  .tabs button{padding:8px 11px;font-size:12.5px}
+  .kpi{padding:13px 14px}
+  .kpi .val{font-size:19px}
+  .modal{padding:18px}
+  .row{gap:9px}
+  .field{min-width:120px}
+}
+@media(max-width:430px){
+  .grid.g4,.grid.g3,.grid.g2{grid-template-columns:1fr}
+  .topbar h2{font-size:15px}
+  .btn{padding:8px 12px}
+  .field{min-width:100%}
+}
 </style>
 </head>
 <body>
