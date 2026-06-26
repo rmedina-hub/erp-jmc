@@ -880,7 +880,7 @@ function leerCSV() {
 async function importarCartola() {
   try {
     const d = await api('POST', '/tesoreria/cartola/import', { cuenta_id: val('caCuenta'), csv: val('caTxt') });
-    $('#caRes').innerHTML = `<div class="card" style="margin-top:14px"><b>${d.importadas}</b> lineas importadas${d.omitidas ? `, <b>${d.omitidas}</b> omitidas por estar duplicadas` : ''} (lote ${d.lote}). Ve a la pestana <b>Conciliacion</b>.</div>`;
+    $('#caRes').innerHTML = `<div class="card" style="margin-top:14px"><b>${d.importadas}</b> lineas importadas${d.omitidas ? `, <b>${d.omitidas}</b> duplicadas omitidas` : ''}.<br><b style="color:var(--verde)">${d.conciliadas || 0}</b> conciliadas automaticamente contra tesoreria &middot; <b style="color:var(--amarillo)">${d.pendientes || 0}</b> pendientes de revision en la pestana <b>Conciliacion</b>.</div>`;
   } catch (e) { $('#caErr').textContent = e.message; }
 }
 async function tesConcil() {
