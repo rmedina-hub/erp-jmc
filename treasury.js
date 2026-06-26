@@ -86,6 +86,17 @@ router.delete('/movimientos/:id', (req, res) => {
 });
 
 // ---------- Importar cartola ----------
+function normFecha(s) {
+  s = String(s == null ? '' : s).trim();
+  if (!s) return '';
+  let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);            // yyyy-mm-dd
+  if (m) return m[1] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[3]).padStart(2, '0');
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);                // dd-mm-yyyy
+  if (m) return m[3] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+  m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2})$/);                // dd-mm-yy
+  if (m) return '20' + m[3] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+  return s;
+}
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   if (!lines.length) return [];
@@ -113,7 +124,7 @@ function parseCSV(text) {
       if (m < 0) cargo = Math.abs(m); else abono = m;
     }
     out.push({
-      fecha: (iFecha >= 0 ? c[iFecha] : '').trim(),
+      fecha: normFecha(iFecha >= 0 ? c[iFecha] : ''),
       descripcion: (iDesc >= 0 ? c[iDesc] : '').trim(),
       cargo, abono,
       saldo: iSaldo >= 0 ? num(c[iSaldo]) : null
