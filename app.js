@@ -94,12 +94,12 @@ function activarOcultarBorrar() {
 async function logout() { try { await api('POST', '/usuarios/logout', {}); } catch (e) {} TOKEN = null; USER = null; location.reload(); }
 
 // ===== Router =====
-const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', estados: 'Estados financieros', impuestos: 'Impuestos (IVA / PPM / F29)', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
+const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', estados: 'Estados financieros', impuestos: 'Impuestos (IVA / PPM / F29)', contabilidad: 'Contabilidad', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
 function go(v) {
   stopFlujoAuto();
   document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('active', a.dataset.v === v));
   $('#viewTitle').textContent = TITLES[v] || v;
-  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, indicadores: vIndicadores, estados: vEstados, impuestos: vImpuestos, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
+  ({ dashboard: vDashboard, inventario: vInventario, tesoreria: vTesoreria, flujo: vFlujo, indicadores: vIndicadores, estados: vEstados, impuestos: vImpuestos, contabilidad: vContabilidad, creditos: vCreditos, activos: vActivos, facturas: vFacturas, compras: vCompras, terceros: vTerceros, maquinarias: vMaquinarias, garantias: vGarantias, cajachica: vCajaChica, usuarios: vUsuarios, auditoria: vAuditoria, papelera: vPapelera }[v] || vDashboard)();
 }
 document.querySelectorAll('#nav a').forEach(a => a.addEventListener('click', () => go(a.dataset.v)));
 
@@ -242,6 +242,146 @@ async function renderEstados() {
 
 
 let impTab = 'f29', impMes = hoy().slice(0, 7);
+// ===== Contabilidad (Fase 2) =====
+let ctaTab = 'diario';
+let ctaDesde = inicioAno();
+let ctaHasta = hoy();
+let ctaMayorCta = '';
+let _ctaCuentas = [];
+async function vContabilidad() {
+  C().innerHTML = `<div class="tabs">
+    <button data-t="diario">Libro Diario</button>
+    <button data-t="mayor">Libro Mayor</button>
+    <button data-t="balance">Balance comprobacion</button>
+    <button data-t="eerr">Estado de Resultados</button>
+    <button data-t="bg">Balance General</button>
+    <button data-t="plan">Plan de cuentas</button></div>
+    <div id="ctaBody"></div>`;
+  C().querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { ctaTab = b.dataset.t; renderCtaTab(); }));
+  try { _ctaCuentas = await api('GET', '/contabilidad/cuentas'); } catch (e) { _ctaCuentas = []; }
+  renderCtaTab();
+}
+function renderCtaTab() {
+  C().querySelectorAll('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.t === ctaTab));
+  ({ diario: renderDiario, mayor: renderMayor, balance: renderBalanceComp, eerr: renderEERRcta, bg: renderBGcta, plan: renderPlan }[ctaTab] || renderDiario)();
+}
+function ctaRango() {
+  return `<div class="row" style="margin:10px 0;gap:10px">
+    <div class="field" style="max-width:160px"><label>Desde</label><input type="date" value="${ctaDesde}" onchange="ctaDesde=this.value;renderCtaTab()"></div>
+    <div class="field" style="max-width:160px"><label>Hasta</label><input type="date" value="${ctaHasta}" onchange="ctaHasta=this.value;renderCtaTab()"></div></div>`;
+}
+async function renderDiario() {
+  const d = await api('GET', `/contabilidad/asientos?desde=${ctaDesde}&hasta=${ctaHasta}`);
+  document.getElementById('ctaBody').innerHTML = ctaRango() +
+    `<div class="card"><h3>Libro Diario <span class="muted">${ctaDesde} a ${ctaHasta} &middot; ${d.length} asientos</span>
+      <span style="float:right"><button class="btn" onclick="formAsiento()">+ Registrar asiento</button></span></h3>
+     <table><tr><th>N</th><th>Fecha</th><th>Glosa</th><th>Cuenta</th><th class="num">Debe</th><th class="num">Haber</th><th></th></tr>
+     ${d.length ? d.map(a => a.lineas.map((l, i) => `<tr>
+        ${i === 0 ? `<td rowspan="${a.lineas.length}">${a.numero}</td><td rowspan="${a.lineas.length}">${esc(a.fecha)}</td><td rowspan="${a.lineas.length}">${esc(a.glosa)}<br><span class="muted" style="font-size:11px">${esc(a.tipo)}</span></td>` : ''}
+        <td><span class="muted">${esc(l.cuenta_codigo)}</span> ${esc(l.cuenta_nombre || '')}</td>
+        <td class="num">${l.debe ? clp(l.debe) : ''}</td><td class="num">${l.haber ? clp(l.haber) : ''}</td>
+        ${i === 0 ? `<td rowspan="${a.lineas.length}"><button class="btn sm red" onclick="delAsiento(${a.id})">Eliminar</button></td>` : ''}
+      </tr>`).join('')).join('') : '<tr><td colspan="7" class="empty">Sin asientos en el periodo</td></tr>'}
+     </table></div>`;
+}
+function ctaSelect(sel) { return `<select class="ctaCuentaSel">${_ctaCuentas.map(c => `<option value="${esc(c.codigo)}"${c.codigo === sel ? ' selected' : ''}>${esc(c.codigo)} ${esc(c.nombre)}</option>`).join('')}</select>`; }
+function lineaAsientoRow() {
+  return `<tr>
+    <td>${ctaSelect('')}</td>
+    <td><input type="number" class="ctaDebe" style="width:110px" value="0" oninput="ctaRecalc()"></td>
+    <td><input type="number" class="ctaHaber" style="width:110px" value="0" oninput="ctaRecalc()"></td>
+    <td><input class="ctaGlosa" placeholder="glosa"></td>
+    <td><button class="btn sm red" onclick="this.closest('tr').remove();ctaRecalc()">x</button></td></tr>`;
+}
+function formAsiento() {
+  modal(`<h3>Registrar asiento contable</h3>
+    <div class="row" style="gap:10px">
+      <div class="field" style="max-width:160px"><label>Fecha</label><input id="asFecha" type="date" value="${hoy()}"></div>
+      <div class="field" style="flex:1"><label>Glosa</label><input id="asGlosa" placeholder="Descripcion del asiento"></div></div>
+    <table style="margin-top:8px"><tr><th>Cuenta</th><th>Debe</th><th>Haber</th><th>Glosa</th><th></th></tr>
+      <tbody id="asLineas">${lineaAsientoRow() + lineaAsientoRow()}</tbody>
+      <tr style="font-weight:600"><td style="text-align:right">Totales</td><td class="num" id="asTotDebe">0</td><td class="num" id="asTotHaber">0</td><td colspan="2" id="asDif"></td></tr></table>
+    <button class="btn ghost sm" onclick="document.getElementById('asLineas').insertAdjacentHTML('beforeend', lineaAsientoRow());">+ Agregar linea</button>
+    <div id="asErr" class="err" style="margin-top:6px"></div>
+    <div style="margin-top:10px;text-align:right"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarAsiento()">Guardar asiento</button></div>`);
+  ctaRecalc();
+}
+function ctaRecalc() {
+  let td = 0, th = 0;
+  document.querySelectorAll('#asLineas tr').forEach(tr => { td += Number(tr.querySelector('.ctaDebe').value) || 0; th += Number(tr.querySelector('.ctaHaber').value) || 0; });
+  const e = document.getElementById('asTotDebe'); if (e) e.textContent = clp(td);
+  const e2 = document.getElementById('asTotHaber'); if (e2) e2.textContent = clp(th);
+  const dif = document.getElementById('asDif'); if (dif) dif.innerHTML = (Math.round(td) === Math.round(th)) ? '<span style="color:#1a7f37">Cuadrado</span>' : '<span style="color:#c00">Descuadre: ' + clp(td - th) + '</span>';
+}
+async function guardarAsiento() {
+  const lineas = [...document.querySelectorAll('#asLineas tr')].map(tr => ({ cuenta_codigo: tr.querySelector('.ctaCuentaSel').value, debe: Number(tr.querySelector('.ctaDebe').value) || 0, haber: Number(tr.querySelector('.ctaHaber').value) || 0, glosa: tr.querySelector('.ctaGlosa').value }));
+  try { await api('POST', '/contabilidad/asientos', { fecha: val('asFecha'), glosa: val('asGlosa'), lineas }); closeModal(); renderCtaTab(); }
+  catch (e) { const el = document.getElementById('asErr'); if (el) el.textContent = e.message; }
+}
+async function delAsiento(id) { if (!confirm('Eliminar este asiento?')) return; try { await api('DELETE', '/contabilidad/asientos/' + id); } catch (e) { alert(e.message); return; } renderCtaTab(); }
+async function renderMayor() {
+  if (!ctaMayorCta && _ctaCuentas.length) ctaMayorCta = _ctaCuentas[0].codigo;
+  const sel = `<div class="field" style="max-width:340px"><label>Cuenta</label><select onchange="ctaMayorCta=this.value;renderMayor()">${_ctaCuentas.map(c => `<option value="${esc(c.codigo)}"${c.codigo === ctaMayorCta ? ' selected' : ''}>${esc(c.codigo)} ${esc(c.nombre)}</option>`).join('')}</select></div>`;
+  document.getElementById('ctaBody').innerHTML = ctaRango() + sel + '<div id="mayorBody" class="muted">Cargando...</div>';
+  if (!ctaMayorCta) { document.getElementById('mayorBody').innerHTML = '<p class="empty">No hay cuentas</p>'; return; }
+  const d = await api('GET', `/contabilidad/mayor?cuenta=${encodeURIComponent(ctaMayorCta)}&desde=${ctaDesde}&hasta=${ctaHasta}`);
+  document.getElementById('mayorBody').innerHTML = `<div class="card"><h3>Mayor: <span class="muted">${esc(d.cuenta)} ${esc(d.nombre)}</span></h3>
+    <table><tr><th>Fecha</th><th>N</th><th>Glosa</th><th class="num">Debe</th><th class="num">Haber</th><th class="num">Saldo</th></tr>
+    <tr style="background:#f4f7fb"><td colspan="5">Saldo anterior</td><td class="num">${clp(d.saldoAnterior)}</td></tr>
+    ${d.movimientos.map(m => `<tr><td>${esc(m.fecha)}</td><td>${m.numero}</td><td>${esc(m.glosa || '')}</td><td class="num">${m.debe ? clp(m.debe) : ''}</td><td class="num">${m.haber ? clp(m.haber) : ''}</td><td class="num">${clp(m.saldo)}</td></tr>`).join('')}
+    <tr style="font-weight:600;background:#eaf0f6"><td colspan="3">Totales</td><td class="num">${clp(d.totalDebe)}</td><td class="num">${clp(d.totalHaber)}</td><td class="num">${clp(d.saldoFinal)}</td></tr></table></div>`;
+}
+async function renderBalanceComp() {
+  const d = await api('GET', `/contabilidad/balance?desde=${ctaDesde}&hasta=${ctaHasta}`);
+  document.getElementById('ctaBody').innerHTML = ctaRango() + `<div class="card"><h3>Balance de comprobacion <span class="muted">${ctaDesde} a ${ctaHasta}</span></h3>
+    <table><tr><th>Codigo</th><th>Cuenta</th><th class="num">Debe</th><th class="num">Haber</th><th class="num">Deudor</th><th class="num">Acreedor</th></tr>
+    ${d.cuentas.length ? d.cuentas.map(c => `<tr><td><span class="muted">${esc(c.codigo)}</span></td><td>${esc(c.nombre)}</td><td class="num">${clp(c.debe)}</td><td class="num">${clp(c.haber)}</td><td class="num">${c.deudor ? clp(c.deudor) : ''}</td><td class="num">${c.acreedor ? clp(c.acreedor) : ''}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">Sin movimientos</td></tr>'}
+    <tr style="font-weight:600;background:#eaf0f6"><td colspan="2">Totales</td><td class="num">${clp(d.totalDebe)}</td><td class="num">${clp(d.totalHaber)}</td><td class="num">${clp(d.totalDeudor)}</td><td class="num">${clp(d.totalAcreedor)}</td></tr></table></div>`;
+}
+async function renderEERRcta() {
+  const d = await api('GET', `/contabilidad/eerr?desde=${ctaDesde}&hasta=${ctaHasta}`);
+  const seg = (t, arr, tot) => `<tr style="background:#f4f7fb;font-weight:600"><td>${t}</td><td class="num">${clp(tot)}</td></tr>${arr.map(c => `<tr><td style="padding-left:18px"><span class="muted">${esc(c.codigo)}</span> ${esc(c.nombre)}</td><td class="num">${clp(c.monto)}</td></tr>`).join('')}`;
+  document.getElementById('ctaBody').innerHTML = ctaRango() + `<div class="card"><h3>Estado de Resultados <span class="muted">${ctaDesde} a ${ctaHasta}</span></h3>
+    <table>${seg('Ingresos', d.ingresos, d.totalIngresos)}${seg('Gastos', d.gastos, d.totalGastos)}
+    <tr style="font-weight:700;background:#dce6f2"><td>Resultado del ejercicio</td><td class="num" style="color:${d.resultado >= 0 ? '#1a7f37' : '#c00'}">${clp(d.resultado)}</td></tr></table></div>`;
+}
+async function renderBGcta() {
+  const d = await api('GET', `/contabilidad/balance-general?hasta=${ctaHasta}`);
+  const seg = (t, arr, tot) => `<tr style="background:#f4f7fb;font-weight:600"><td>${t}</td><td class="num">${clp(tot)}</td></tr>${arr.map(c => `<tr><td style="padding-left:18px"><span class="muted">${esc(c.codigo)}</span> ${esc(c.nombre)}</td><td class="num">${clp(c.monto)}</td></tr>`).join('')}`;
+  document.getElementById('ctaBody').innerHTML = `<div class="row" style="margin:10px 0"><div class="field" style="max-width:160px"><label>Al</label><input type="date" value="${ctaHasta}" onchange="ctaHasta=this.value;renderCtaTab()"></div></div>
+    <div class="card"><h3>Balance General <span class="muted">al ${ctaHasta}</span> ${d.cuadra ? '<span style="color:#1a7f37;font-size:12px">cuadrado</span>' : '<span style="color:#c00;font-size:12px">descuadre</span>'}</h3>
+    <table>${seg('ACTIVOS', d.activos, d.totalActivo)}${seg('PASIVOS', d.pasivos, d.totalPasivo)}${seg('PATRIMONIO', d.patrimonio, d.totalPatrimonio)}
+    <tr><td style="padding-left:18px">Resultado del ejercicio</td><td class="num">${clp(d.resultado)}</td></tr>
+    <tr style="font-weight:700;background:#dce6f2"><td>Total Pasivo + Patrimonio</td><td class="num">${clp(d.totalPasivoPatrimonio)}</td></tr></table></div>`;
+}
+async function renderPlan() {
+  _ctaCuentas = await api('GET', '/contabilidad/cuentas');
+  document.getElementById('ctaBody').innerHTML = `<div class="card"><h3>Plan de cuentas <span class="muted">${_ctaCuentas.length} cuentas</span><span style="float:right"><button class="btn" onclick="formCuenta()">+ Nueva cuenta</button></span></h3>
+    <table><tr><th>Codigo</th><th>Nombre</th><th>Tipo</th><th></th></tr>
+    ${_ctaCuentas.map(c => `<tr><td><span class="muted">${esc(c.codigo)}</span></td><td>${esc(c.nombre)}</td><td>${esc(c.tipo)}</td><td><button class="btn sm" onclick="formCuenta(${c.id})">Editar</button> <button class="btn sm red" onclick="delCuenta(${c.id})">Eliminar</button></td></tr>`).join('')}
+    </table></div>`;
+}
+function formCuenta(id) {
+  const c = id ? _ctaCuentas.find(x => x.id === id) : null;
+  const tipos = ['ACTIVO', 'PASIVO', 'PATRIMONIO', 'INGRESO', 'GASTO'];
+  modal(`<h3>${c ? 'Editar' : 'Nueva'} cuenta</h3>
+    <div class="field"><label>Codigo</label><input id="ccCod" value="${c ? esc(c.codigo) : ''}" placeholder="1.1.07"></div>
+    <div class="field"><label>Nombre</label><input id="ccNom" value="${c ? esc(c.nombre) : ''}"></div>
+    <div class="field"><label>Tipo</label><select id="ccTipo">${tipos.map(t => `<option${c && c.tipo === t ? ' selected' : ''}>${t}</option>`).join('')}</select></div>
+    <div id="ccErr" class="err"></div>
+    <div style="text-align:right;margin-top:10px"><button class="btn ghost" onclick="closeModal()">Cancelar</button> <button class="btn" onclick="guardarCuenta(${c ? c.id : 0})">Guardar</button></div>`);
+}
+async function guardarCuenta(id) {
+  const body = { codigo: val('ccCod'), nombre: val('ccNom'), tipo: val('ccTipo') };
+  try {
+    if (id) { window._sinConfirmar = true; try { await api('PUT', '/contabilidad/cuentas/' + id, body); } finally { window._sinConfirmar = false; } }
+    else await api('POST', '/contabilidad/cuentas', body);
+    closeModal(); renderPlan();
+  } catch (e) { const el = document.getElementById('ccErr'); if (el) el.textContent = e.message; }
+}
+async function delCuenta(id) { if (!confirm('Eliminar la cuenta?')) return; try { await api('DELETE', '/contabilidad/cuentas/' + id); } catch (e) { alert(e.message); return; } renderPlan(); }
+// ===== fin Contabilidad =====
+
 function vImpuestos() {
   C().innerHTML = `<div class="tabs">
     <button data-t="f29">Propuesta F29</button>
