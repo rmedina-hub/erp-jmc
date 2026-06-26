@@ -73,6 +73,7 @@ async function doLogin(e) {
     const _sw = document.getElementById('empresaSwitch');
     if (_sw) _sw.style.display = (!USER.empresa) ? '' : 'none';
     activarOcultarBorrar();
+    _resetIdle();
     go(USER.rol === 'bodeguero' ? 'inventario' : 'dashboard');
   } catch (err) { $('#liErr').textContent = err.message; }
 }
@@ -102,6 +103,22 @@ function _registrarCierre() {
   } catch (e) {}
 }
 window.addEventListener('pagehide', _registrarCierre);
+// Cierre automatico por inactividad (5 minutos sin actividad)
+let _idleTimer = null;
+const _IDLE_MS = 5 * 60 * 1000;
+function _resetIdle() {
+  if (_idleTimer) clearTimeout(_idleTimer);
+  if (!TOKEN || !USER) return;
+  _idleTimer = setTimeout(_cierrePorInactividad, _IDLE_MS);
+}
+function _cierrePorInactividad() {
+  if (!TOKEN || !USER) return;
+  _registrarCierre();
+  TOKEN = null; USER = null;
+  try { alert('Tu sesion se cerro por 5 minutos de inactividad. Vuelve a ingresar tu usuario y contrasena.'); } catch (e) {}
+  location.reload();
+}
+['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(ev => document.addEventListener(ev, _resetIdle, { passive: true }));
 
 // ===== Router =====
 const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', estados: 'Estados financieros', impuestos: 'Impuestos (IVA / PPM / F29)', contabilidad: 'Contabilidad', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
