@@ -401,4 +401,28 @@ const DATA_TABLES = ['bodegas', 'productos', 'inv_movimientos', 'cuentas_bancari
   } catch (e) {}
 })();
 
+(function fixFechasMalCargadas() {
+  try {
+    if (db.prepare("SELECT 1 FROM _meta WHERE clave='fix_fechas_v1'").get()) return;
+    const norm = (s) => {
+      s = String(s == null ? '' : s).trim();
+      if (!s) return '';
+      let m = s.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
+      if (m) return m[1] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[3]).padStart(2, '0');
+      m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+      if (m) return m[3] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+      m = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2})$/);
+      if (m) return '20' + m[3] + '-' + String(m[2]).padStart(2, '0') + '-' + String(m[1]).padStart(2, '0');
+      return s;
+    };
+    for (const tbl of ['cartola_lineas', 'tes_movimientos']) {
+      const rows = db.prepare("SELECT id, fecha FROM " + tbl + " WHERE fecha IS NOT NULL AND fecha NOT GLOB '____-__-__'").all();
+      const upd = db.prepare("UPDATE " + tbl + " SET fecha=? WHERE id=?");
+      for (const r of rows) { const f = norm(r.fecha); if (f && f !== r.fecha && /^\d{4}-\d{2}-\d{2}$/.test(f)) upd.run(f, r.id); }
+    }
+    db.prepare("INSERT OR REPLACE INTO _meta (clave,valor) VALUES ('fix_fechas_v1', datetime('now'))").run();
+  } catch (e) {}
+})();
+
 module.exports = db;
+
