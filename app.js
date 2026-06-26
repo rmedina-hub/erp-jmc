@@ -92,6 +92,16 @@ function activarOcultarBorrar() {
   _moBorrar.observe(document.body, { childList: true, subtree: true });
 }
 async function logout() { try { await api('POST', '/usuarios/logout', {}); } catch (e) {} TOKEN = null; USER = null; location.reload(); }
+// Registra la hora de salida aunque cierren la pestana sin apretar Salir
+function _registrarCierre() {
+  try {
+    if (TOKEN && USER && navigator.sendBeacon) {
+      const blob = new Blob([JSON.stringify({ token: TOKEN, empresa: (typeof activeEmpresa === 'function' ? activeEmpresa() : null) })], { type: 'application/json' });
+      navigator.sendBeacon('/api/usuarios/cierre', blob);
+    }
+  } catch (e) {}
+}
+window.addEventListener('pagehide', _registrarCierre);
 
 // ===== Router =====
 const TITLES = { dashboard: 'Panel', inventario: 'Inventario PMP', tesoreria: 'Tesoreria', flujo: 'Flujo de caja', indicadores: 'Ratios financieros', estados: 'Estados financieros', impuestos: 'Impuestos (IVA / PPM / F29)', contabilidad: 'Contabilidad', creditos: 'Creditos bancarios', activos: 'Activos fijos', facturas: 'Cuentas por cobrar / pagar', compras: 'Compras / Abastecimiento', terceros: 'Proveedores y clientes', maquinarias: 'Arriendo de maquinarias', garantias: 'Boletas de garantia', cajachica: 'Caja chica', usuarios: 'Usuarios', auditoria: 'Auditoria', papelera: 'Papelera de activos' };
